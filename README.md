@@ -5,7 +5,7 @@
 
 ## 下载
 
-绿色单文件版在 [Releases](../../releases) 里下载 `会话转MD.exe`（约 21MB，免安装，双击即用）。
+绿色单文件版在 [Releases](../../releases) 里下载 `ChatToMD.exe`（约 21MB，免安装，双击即用）。
 运行时仅依赖系统 **WebView2 运行时**（Win10/11 多数自带，随 Edge 提供）。
 
 ## 功能
