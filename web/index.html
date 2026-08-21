@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话转 MD</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="logo"><span class="dot"></span>会话转 MD</div>
+    <div class="segmented" id="filter">
+      <button class="on" data-f="all">全部</button>
+      <button data-f="claude">Claude</button>
+      <button data-f="codex">Codex</button>
+    </div>
+    <button class="btn" onclick="openSettings()">⚙ 来源目录</button>
+    <button class="btn" onclick="reload()">↻ 刷新</button>
+    <div class="spacer"></div>
+    <div class="outdir">
+      输出到：<span class="path" id="outPath" title="">—</span>
+      <button class="btn" onclick="pickOutput()">选择目录</button>
+    </div>
+    <button class="btn" id="btnSel" onclick="convertSelected()">导出选中 (0)</button>
+    <button class="btn primary" onclick="convertAll()">导出全部</button>
+  </div>
+  <div class="hrow2">
+    <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="selAll" onchange="toggleAll(this.checked)"> 全选</label>
+    <div class="search">
+      <span class="icon">🔍</span>
+      <input id="search" placeholder="搜索标题 / 项目 / 日期…" oninput="renderList()">
+    </div>
+    批量设为
+    <select id="batchMode" onchange="batchSetMode(this.value)">
+      <option value="plain">纯对话</option>
+      <option value="tools" selected>对话+工具</option>
+      <option value="full">完整原始</option>
+    </select>
+    排序
+    <select id="sortMode" onchange="setSort(this.value)">
+      <option value="mod_desc">改动 · 最新在前</option>
+      <option value="mod_asc">改动 · 最早在前</option>
+      <option value="cre_desc">创建 · 最新在前</option>
+      <option value="cre_asc">创建 · 最早在前</option>
+    </select>
+    <span class="result-count" id="count">加载中…</span>
+  </div>
+</header>
+<main>
+  <div class="list-pane">
+    <div class="list" id="list"></div>
+  </div>
+  <div class="preview-pane">
+    <div class="preview-head" id="pvHead">
+      <h2>会话预览</h2>
+      <div class="meta">点击左侧任一会话查看内容</div>
+    </div>
+    <div class="pv-body">
+      <div class="conv" id="conv"><div class="empty">← 从左侧选择一个会话</div></div>
+      <aside class="outline" id="outline"></aside>
+    </div>
+  </div>
+</main>
+<div class="mask" id="mask">
+  <div class="dialog">
+    <h3>来源目录设置</h3>
+    <div class="content">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">
+        启动时自动读取下列目录（支持 CLAUDE_CONFIG_DIR / CODEX_HOME 环境变量）。
+        会话不在默认位置时，可添加自定义目录，软件会自动识别格式。设置随软件保存。
+      </p>
+      <div id="srcList"></div>
+      <div class="add-src" onclick="addSource()">＋ 添加自定义目录…</div>
+    </div>
+    <div class="foot">
+      <button class="btn" onclick="closeSettings()">取消</button>
+      <button class="btn primary" onclick="saveSettings()">保存并重新扫描</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 打包产物（exe 走 GitHub Release，不入库）
+build/
+dist/
+*.spec
+
+# 本地运行配置（含本机目录路径，不公开）
+config.json
+
+# 编辑器 / 工具本地设置
+.claude/
+.idea/
+.vscode/
+
+# 系统
+.DS_Store
+Thumbs.db

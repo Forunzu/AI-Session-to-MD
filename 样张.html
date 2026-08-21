@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话转 MD · 界面样张</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --border: #e6e8ec;
+    --text: #1f2430;
+    --text-dim: #7a828e;
+    --accent: #3b6ef5;
+    --accent-soft: #eaf0ff;
+    --claude: #d97757;
+    --codex: #10a37f;
+    --user-bg: #eaf0ff;
+    --tool-bg: #f3f4f6;
+    --radius: 10px;
+  }
+  body {
+    font-family: "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  /* ---------- 顶部栏 ---------- */
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .hrow { height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 16px; }
+  .hrow2 { display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-top: 1px solid var(--border); background: #fafbfc; }
+  .logo { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .logo .dot { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), #7aa0ff); }
+  .segmented { display: flex; background: var(--bg); border-radius: 8px; padding: 3px; }
+  .segmented button { border: none; background: none; padding: 5px 12px; border-radius: 6px; cursor: pointer; color: var(--text-dim); font-size: 12px; }
+  .segmented button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); font-weight: 600; }
+  .search { flex: 1; position: relative; }
+  .search .icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 14px; pointer-events: none; }
+  .search input { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 8px 34px; font-size: 13px; outline: none; background: var(--panel); }
+  .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .result-count { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+  .spacer { flex: 1; }
+  .outdir { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
+  .outdir .path { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--bg); padding: 5px 10px; border-radius: 6px; }
+  .btn { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 12px; color: var(--text); }
+  .btn:hover { background: var(--bg); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { background: #2f5fe0; }
+  /* ---------- 主区 ---------- */
+  main { flex: 1; display: flex; overflow: hidden; }
+  .list-pane { width: 390px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .list-toolbar { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); }
+  .list-toolbar select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+  .list { flex: 1; overflow-y: auto; }
+  .group-label { padding: 10px 14px 4px; font-size: 11px; color: var(--text-dim); font-weight: 600; letter-spacing: .5px; position: sticky; top: 0; background: var(--panel); }
+  .item { padding: 10px 14px; border-bottom: 1px solid #f0f1f3; cursor: pointer; display: flex; gap: 10px; }
+  .item:hover { background: #fafbfc; }
+  .item.active { background: var(--accent-soft); }
+  .item input[type=checkbox] { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--accent); }
+  .item .body { flex: 1; min-width: 0; }
+  .item .title { font-weight: 600; font-size: 13px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+  .badge { padding: 1px 7px; border-radius: 5px; font-size: 10px; font-weight: 600; color: #fff; }
+  .badge.claude { background: var(--claude); }
+  .badge.codex { background: var(--codex); }
+  .item select { margin-top: 7px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 11px; color: var(--text); background: var(--bg); width: 100%; }
+  /* ---------- 预览 ---------- */
+  .preview-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .preview-head { padding: 16px 22px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .preview-head h2 { font-size: 16px; margin-bottom: 6px; }
+  .preview-head .meta { color: var(--text-dim); font-size: 12px; display: flex; gap: 12px; }
+  .conv { flex: 1; overflow-y: auto; padding: 20px 22px; }
+  .turn { margin-bottom: 18px; }
+  .role { font-size: 11px; font-weight: 700; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  .bubble { padding: 12px 15px; border-radius: var(--radius); line-height: 1.7; }
+  .turn.user .bubble { background: var(--user-bg); }
+  .turn.assistant .bubble { background: var(--panel); border: 1px solid var(--border); }
+  .tool { background: var(--tool-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px; margin: 8px 0; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
+  .tool .tool-name { color: var(--accent); font-weight: 700; margin-bottom: 4px; }
+  .tool.result { color: var(--text-dim); }
+  .mode-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-weight: 600; margin-left: 6px; }
+  .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-dim); flex-direction: column; gap: 8px; }
+  /* ---------- 来源目录设置弹窗 ---------- */
+  .mask { position: fixed; inset: 0; background: rgba(20,24,32,.35); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .mask.show { display: flex; }
+  .dialog { background: var(--panel); border-radius: 14px; width: 560px; max-width: 92vw; box-shadow: 0 12px 40px rgba(0,0,0,.2); overflow: hidden; }
+  .dialog h3 { padding: 16px 20px; border-bottom: 1px solid var(--border); font-size: 15px; }
+  .dialog .content { padding: 16px 20px; max-height: 60vh; overflow-y: auto; }
+  .src-row { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+  .src-row .ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .src-row .info { flex: 1; min-width: 0; }
+  .src-row .p { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src-row .st { font-size: 11px; color: var(--codex); margin-top: 2px; }
+  .src-row .x { color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 2px 6px; }
+  .src-row .x:hover { color: #e5484d; }
+  .add-src { border: 1px dashed var(--border); border-radius: 10px; padding: 11px; text-align: center; color: var(--accent); cursor: pointer; font-size: 12px; }
+  .add-src:hover { background: var(--accent-soft); }
+  .dialog .foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="logo"><span class="dot"></span>会话转 MD</div>
+    <div class="segmented">
+      <button class="on">全部</button>
+      <button>Claude</button>
+      <button>Codex</button>
+    </div>
+    <button class="btn" onclick="openSettings()">⚙ 来源目录</button>
+    <button class="btn" title="重新扫描">↻ 刷新</button>
+    <div class="spacer"></div>
+    <div class="outdir">
+      输出到：<span class="path" title="E:\AI工作交付物\会话归档">E:\AI工作交付物\会话归档</span>
+      <button class="btn">选择目录</button>
+    </div>
+    <button class="btn">导出选中 (2)</button>
+    <button class="btn primary">导出全部</button>
+  </div>
+  <div class="hrow2">
+    <div class="search">
+      <span class="icon">🔍</span>
+      <input placeholder="搜索标题 / 项目 / 日期…　支持关键词过滤所有会话">
+    </div>
+    <span class="result-count">共 164 个会话 · 已选 2</span>
+  </div>
+</header>
+<main>
+  <div class="list-pane">
+    <div class="list-toolbar">
+      <label><input type="checkbox"> 全选</label>
+      <span class="spacer" style="flex:1"></span>
+      批量设为
+      <select>
+        <option>纯对话</option>
+        <option selected>对话+工具</option>
+        <option>完整原始</option>
+      </select>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+  <div class="preview-pane">
+    <div class="preview-head" id="pvHead">
+      <h2>会话预览</h2>
+      <div class="meta">点击左侧任一会话查看内容</div>
+    </div>
+    <div class="conv" id="conv"></div>
+  </div>
+</main>
+<div class="mask" id="mask">
+  <div class="dialog">
+    <h3>来源目录设置</h3>
+    <div class="content">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">
+        软件启动时会自动读取下列默认目录（支持 CLAUDE_CONFIG_DIR / CODEX_HOME 环境变量）。
+        若你把会话放在非 C 盘或其它位置，可在此添加自定义目录。设置随软件保存，下次自动生效。
+      </p>
+      <div class="src-row">
+        <div class="ico" style="background:var(--claude)">CL</div>
+        <div class="info">
+          <div>Claude CLI</div>
+          <div class="p">C:\Users\Administrator\.claude\projects</div>
+          <div class="st">✓ 自动识别 · 找到 117 个会话</div>
+        </div>
+        <span class="x" title="移除">×</span>
+      </div>
+      <div class="src-row">
+        <div class="ico" style="background:var(--codex)">CX</div>
+        <div class="info">
+          <div>Codex</div>
+          <div class="p">C:\Users\Administrator\.codex\sessions</div>
+          <div class="st">✓ 自动识别 · 找到 47 个会话</div>
+        </div>
+        <span class="x" title="移除">×</span>
+      </div>
+      <div class="src-row">
+        <div class="ico" style="background:#7a828e">?</div>
+        <div class="info">
+          <div>自定义目录（示例）</div>
+          <div class="p">E:\会话备份\导出的会话</div>
+          <div class="st" style="color:var(--text-dim)">自动识别格式 · 找到 8 个会话</div>
+        </div>
+        <span class="x" title="移除">×</span>
+      </div>
+      <div class="add-src">＋ 添加自定义目录…</div>
+    </div>
+    <div class="foot">
+      <button class="btn" onclick="closeSettings()">取消</button>
+      <button class="btn primary" onclick="closeSettings()">保存并重新扫描</button>
+    </div>
+  </div>
+</div>
+<script>
+const SESSIONS = [
+  { g:"Claude · E:\\在办项目\\AI会话转MD", src:"claude", title:"把 Codex 和 Claude 会话转成 MD", date:"2026-08-20", size:"30 KB", mode:"对话+工具", checked:true,
+    turns:[
+      {role:"user", text:"我想把 codex 和 claude cli 里的会话转成 MD 存起来，该怎么做？"},
+      {role:"assistant", text:"两边都是 JSONL 存储。我先摸清两边的文件结构再给方案。"},
+      {role:"tool", name:"Bash", text:"find ~/.claude/projects -name '*.jsonl' | wc -l  →  117"},
+      {role:"assistant", text:"Claude 117 个会话、Codex 47 个，最大的 284MB。建议做成带界面的绿色版工具。"},
+    ]},
+  { g:"Claude · E:\\在办项目\\AI会话转MD", src:"claude", title:"界面用浅色还是深色的讨论", date:"2026-08-20", size:"12 KB", mode:"纯对话", checked:true,
+    turns:[
+      {role:"user", text:"原生窗口会很丑吗？"},
+      {role:"assistant", text:"不会。里子是最新 Chromium，好不好看取决于 CSS，不是外壳限制。"},
+    ]},
+  { g:"Codex · 2026/08/18", src:"codex", title:"冠珠讲标版 PPT 重制 · 交易链路诊断", date:"2026-08-18", size:"35 MB", mode:"对话+工具", checked:false,
+    turns:[
+      {role:"user", text:"继续制作，按每 3 页暂停检查。"},
+      {role:"assistant", text:"P06｜交易链路诊断：通过。订单、核销、实际成交口径清晰。"},
+      {role:"tool", name:"apply_patch", text:"更新 context_冠珠瓷砖品牌工作项目.md"},
+      {role:"tool-result", text:"Success. Updated 1 file."},
+    ]},
+  { g:"Codex · 2026/07/31", src:"codex", title:"大型会话（284MB，谨慎导出）", date:"2026-07-31", size:"284 MB", mode:"纯对话", checked:false,
+    turns:[ {role:"user", text:"（超大会话，导出时建议用纯对话模式或限制轮数）"} ]},
+];
+const MODES = ["纯对话", "对话+工具", "完整原始"];
+const listEl = document.getElementById("list");
+const convEl = document.getElementById("conv");
+const headEl = document.getElementById("pvHead");
+let active = 0, lastGroup = "";
+
+function renderList() {
+  listEl.innerHTML = "";
+  lastGroup = "";
+  SESSIONS.forEach((s, i) => {
+    if (s.g !== lastGroup) {
+      lastGroup = s.g;
+      const gl = document.createElement("div");
+      gl.className = "group-label";
+      gl.textContent = s.g;
+      listEl.appendChild(gl);
+    }
+    const item = document.createElement("div");
+    item.className = "item" + (i === active ? " active" : "");
+    const opts = MODES.map(m => `<option ${m === s.mode ? "selected" : ""}>${m}</option>`).join("");
+    item.innerHTML = `
+      <input type="checkbox" ${s.checked ? "checked" : ""} onclick="event.stopPropagation()">
+      <div class="body">
+        <div class="title">${s.title}</div>
+        <div class="meta">
+          <span class="badge ${s.src}">${s.src === "claude" ? "Claude" : "Codex"}</span>
+          <span>${s.date}</span><span>·</span><span>${s.size}</span>
+        </div>
+        <select onclick="event.stopPropagation()" onchange="SESSIONS[${i}].mode=this.value;renderPreview()">${opts}</select>
+      </div>`;
+    item.onclick = () => { active = i; renderList(); renderPreview(); };
+    listEl.appendChild(item);
+  });
+}
+function renderPreview() {
+  const s = SESSIONS[active];
+  headEl.innerHTML = `<h2>${s.title}<span class="mode-tag">导出模式：${s.mode}</span></h2>
+    <div class="meta"><span class="badge ${s.src}">${s.src === "claude" ? "Claude" : "Codex"}</span>
+    <span>${s.date}</span><span>${s.size}</span></div>`;
+  const showTools = s.mode !== "纯对话";
+  convEl.innerHTML = "";
+  s.turns.forEach(t => {
+    if ((t.role === "tool" || t.role === "tool-result") && !showTools) return;
+    const div = document.createElement("div");
+    if (t.role === "user" || t.role === "assistant") {
+      div.className = "turn " + t.role;
+      div.innerHTML = `<div class="role">${t.role === "user" ? "我" : "AI"}</div>
+        <div class="bubble">${t.text}</div>`;
+    } else if (t.role === "tool") {
+      div.className = "tool";
+      div.innerHTML = `<div class="tool-name">🔧 ${t.name}</div><div>${t.text}</div>`;
+    } else {
+      div.className = "tool result";
+      div.textContent = "↳ " + t.text;
+    }
+    convEl.appendChild(div);
+  });
+  if (s.mode === "纯对话") {
+    const note = document.createElement("div");
+    note.style.cssText = "color:var(--text-dim);font-size:11px;margin-top:10px;";
+    note.textContent = "（纯对话模式：已隐藏工具调用与命令，仅保留对话正文）";
+    convEl.appendChild(note);
+  }
+}
+renderList();
+renderPreview();
+function openSettings() { document.getElementById("mask").classList.add("show"); }
+function closeSettings() { document.getElementById("mask").classList.remove("show"); }
+document.getElementById("mask").addEventListener("click", e => { if (e.target.id === "mask") closeSettings(); });
+</script></body>
+</html>
