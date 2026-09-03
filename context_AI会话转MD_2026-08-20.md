@@ -1,5 +1,5 @@
 # context_AI会话转MD_2026-08-20.md
-> 最后更新：2026-09-03 16:45 | 当前阶段：v4.2 已修完备份包结构 / 命名 / 还原认路三处缺陷，exe 已重打包（16:35）；待真机续聊确认 → push → 发 Release
+> 最后更新：2026-09-03 17:25 | 当前阶段：v4.2 已修完备份包结构 / 命名 / 还原认路三处缺陷，exe 已重打包（16:35）并本地入库（`5430c3f` + `986e5f2`）；待真机续聊确认 → push → 发 Release
 
 ---
 
@@ -40,7 +40,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ## ✅ 当前进度
 - 已完成：v1（解析/扫描/转换 + GUI + 单文件 exe）→ v2（指令目录 + MD 自动标题 + 单条导出）→ v3（双日期显示 + 手动排序 + 目录高亮 CSS 修复 + 开源发布）→ **v4（迁移功能：跨 CLI 续聊 + 换机备份还原，后端 3 个新模块 + 9 条新路由 + 迁移弹窗，已自测通过）** → **v4.1（真机实测反馈修复：续聊命令改发会话 id、备份目标选到盘根自动改用 `AI-CLI-Backup` 子目录、zip 落点与失败隔离、还原目录自动下钻）** → **v4.2（备份包结构与命名 + 还原认路：带日期的快照目录、zip 套同名顶层文件夹、`备份说明.txt`、`locate_backup` 覆盖四种选法、0 文件给原因并拒绝开跑、续聊命令去掉 `&&`）**。
-- 进行中：v4.2 收尾——`vault.py` / `app.py` / `web/app.js` / `web/index.html` / `migrator.py` / `style.css` / `README.md` 全部改完；沙箱 9/9 `ALL OK`、真实数据只读复核（用户那个失败选法 `E:\claude` 现在读出 12728 文件 / 407.1 MB）、Flask test_client 逐路由实跑、`node --check` 通过、exe 已重打包（`dist\会话转MD.exe` 21.6MB / 09-03 16:35，启动冒烟 4 个进程稳定存活）。剩「真机续聊确认 → 提交 → push + 发 Release v1.1.0」。
+- 进行中：v4.2 收尾——`vault.py` / `app.py` / `web/app.js` / `web/index.html` / `migrator.py` / `style.css` / `README.md` 全部改完并提交 `5430c3f`（context 另提 `986e5f2`）；沙箱 9/9 `ALL OK`、真实数据只读复核（用户那个失败选法 `E:\claude` 现在读出 12728 文件 / 407.1 MB）、Flask test_client 逐路由实跑、`node --check` 通过、exe 已重打包（`dist\会话转MD.exe` 21.6MB / 09-03 16:35，启动冒烟 4 个进程稳定存活）。剩「真机续聊确认 + 新 exe 手感实测 → push 7 个提交 + 发 Release v1.1.0」。
 - 待启动：按反馈调整；可选 WebView2 固定版打包。（v4.1 那三个残留已按用户拍板处理完：`E:\manifest.json` + `E:\claude\` 已移进 `E:\AI-CLI-Backup\`、`dist\_20260903-125458.zip` 已删。v4.2 实测又留下一份重复副本 `E:\claude` + `E:\AI-CLI-Backup_20260903-151509.zip`，等用户拍板删除）
 
 ## 🌐 开源信息
@@ -128,7 +128,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
 - 修改 `web/app.js`：还原干跑区显示「读的是 `<路径>`」、`warn` 提示、缺失条目打 ⚠；预览结果为 0 文件时「开始还原」按钮拒绝武装并提示看清单；zip 说明改成「包内套一层同名文件夹」。
 - 修改 `backend/migrator.py` / `web/style.css`：续聊命令去掉 `&&`——Claude 给两行（`cd "<cwd>"` 换行 `claude --resume <id>`），Codex 用根命令的 `-C/--cd` 一行（`codex -C "<cwd>" resume <id>`）；命令块 CSS 加 `white-space: pre-wrap` 让两行正常显示。
 - 修改 `README.md`：备份段改写为带日期的快照目录、`备份说明.txt`、zip 套同名文件夹、还原端四种选法与歧义报错、0 文件时的说明；续聊段写明不用 `&&` 的原因。
-**当前状态：** 已定稿（沙箱 9/9 + 真实数据只读复核 + 路由实跑 + exe 重打包并启动冒烟通过，待真机续聊确认）。
+**当前状态：** 已定稿（沙箱 9/9 + 真实数据只读复核 + 路由实跑 + exe 重打包并启动冒烟通过，代码提交 `5430c3f`、context 提交 `986e5f2`，待真机续聊确认）。
 **未解决的分歧：** 无。`E:\claude` 与 `E:\AI-CLI-Backup_20260903-151509.zip` 已成 `E:\AI-CLI-Backup` 的重复副本，删不删是用户的数据、留给用户定。
 
 ---
@@ -213,7 +213,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
    本机权限分类器连挡 3 次 `codex exec resume`，只做了静态核对（rollout 文件名 UUID == `payload.session_id`）。
 2. **v4.2 手感实测**（双击 16:35 的新 exe）：① 备份到任意目录，确认新建的是 `claude_日期-时分\`、里面有 `manifest.json` + `备份说明.txt` + `claude\`；② 勾 zip，解压确认只解出一个同名文件夹；③ 还原侧把「备份目录」分别选那一层、它的上一层、里面的 `claude\`，确认三次都能读出文件数与「备份于 / 来自」。
 3. **清理 E 盘残留**（用户的数据，等用户拍板）：`E:\claude`（12728 文件 / 407.1 MB，20260903-151507）与 `E:\AI-CLI-Backup_20260903-151509.zip`（242.5 MB）都是 `E:\AI-CLI-Backup` 那份的重复副本，`E:\manifest.json` 已经不在了。删掉这两个即可，`E:\AI-CLI-Backup` 保留。
-4. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 5 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1 + `10913a5` context + `fd38b17`），刻意压在真机确认之后。
+4. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 7 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1 + `10913a5` context + `fd38b17` context + `5430c3f` v4.2 + `986e5f2` context），刻意压在真机确认之后。
 5. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
 6. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
 
@@ -255,5 +255,5 @@ build_exe.bat     PyInstaller 单文件打包脚本
 ### 2026-09-03 16:45
 **本次做了什么：** v4.2——修用户走完整「备份→打包→换机还原」链路暴露的三处缺陷，全都在交付边界上。① zip 结构：`_make_zip` 给每个 arcname 套一层 `<zip 主名>/`，解压只得一个完整可还原的目录。② 命名：`normalize_dest` 改成一律新建 `claude_YYYYMMDD-HHMM`（多 CLI 用 `AI-CLI-Backup_…`），加 `SNAP_RE` 防「干跑+真跑套两层」，目标里已有 manifest 则原地增量；顺手加 `备份说明.txt`（utf-8-sig，人类可读的来源/凭证/还原五步）。③ 还原认路：`resolve_backup_dir`（只会下钻）重构成 `locate_backup(d) -> (内容根, manifest)`，覆盖正选/上一层/CLI 子目录/json 被挪进子目录四种选法，一个目录下有多份备份就报错让用户指明；`plan_restore` 补返回 `manifest`、逐条 `missing`、0 文件的 `warn`，`start_restore` 层级不对直接拒绝；前端显示「读的是 <路径>」+ ⚠ 标记，0 文件时按钮不武装。④ 顺带修 PowerShell 5.1 不认 `&&`：Codex 改用根级 `-C/--cd` 一行，Claude 给两行，CSS 加 `pre-wrap`。⑤ README 备份段整段改写，exe 重打包。
 **关键结论 / 产出：** 三处缺陷根因分别是 **zip 缺顶层文件夹**（惯例问题，不是代码 bug）、**目录名没有时间维度**（同盘二次备份会覆盖）、**归位函数只考虑了一个方向**（用户把 json 往里挪，方向正好相反，于是条目目录被算成 `E:\claude\claude`，12728 个文件全判缺失 → 界面 0 条）。修的过程中自己踩了两个：一是最后的兜底 `return only or d` 又把路径钻回子目录，二是 `plan_restore` 与 `restore_targets` 各归位一次导致父/子来回跳、算出 `<dir>\<key>\<key>`——**归位必须只对原始输入做一次**，已写进代码注释。另外发现「自动下钻」在 `E:\` 下有两份备份时等于随机挑一份往真实 HOME 里灌，改成报错不猜。界面那句「备份于 —，来自 —」不是数据问题，是后端压根没返回 `manifest` 字段（前后端字段名不匹配只会静默显示空值，不报错）。验证：沙箱 9 例 `ALL OK`（含 zip stem 断言、四种选法、坏层级被 `start_restore` 拒绝、二次备份 4/4 全跳过）；真实数据只读复核 `E:\claude` → 12728 文件 / 407.1 MB / created 20260903-151507 / host PC-20250303XWLM，`E:\AI-CLI-Backup\claude` 上浮到 `E:\AI-CLI-Backup`，`E:\` 正确报歧义；Flask test_client 实跑 9 个入口（备份干跑 `E:\` → `E:\claude_20260903-1628`、12713 文件 / 397.9 MB；还原干跑、歧义、非备份目录、5 个静态与 API 路由）；`node --check web/app.js` 通过；PyInstaller 重打包 `dist\会话转MD.exe` 21.6MB / 16:35，启动冒烟 4 个进程稳定存活后 `taskkill` 清掉。
-**遗留问题：** ① 真机续聊仍未确认（`codex -C "<cwd>" resume <id>` 一行、Claude 两行），需用户在场；② v4.2 手感实测（新 exe 走一遍备份/解压/三种还原选法）；③ 全部改动尚未提交，加上之前 5 个未推送提交，push + Release v1.1.0 仍压在真机确认之后；④ `E:\claude` 与 `E:\AI-CLI-Backup_20260903-151509.zip` 已是 `E:\AI-CLI-Backup` 的重复副本，删不删等用户拍板。
+**遗留问题：** ① 真机续聊仍未确认（`codex -C "<cwd>" resume <id>` 一行、Claude 两行），需用户在场；② v4.2 手感实测（新 exe 走一遍备份/解压/三种还原选法）；③ 代码与 context 已本地入库（`5430c3f` 7 文件 / `986e5f2`），仍用 `git -c` 临时注入 Forunzu 身份、未改全局配置；连上之前 5 个共 **7 个提交未推送**，push + Release v1.1.0 仍压在真机确认之后；④ `E:\claude` 与 `E:\AI-CLI-Backup_20260903-151509.zip` 已是 `E:\AI-CLI-Backup` 的重复副本，删不删等用户拍板。
 **残留处理（用户拍板「移进 AI-CLI-Backup + 删 zip」，已执行）：** `E:\claude\` 与 `E:\manifest.json` 同盘 `os.replace` 移进 `E:\AI-CLI-Backup\`（瞬间完成、不产生复制），移动前后文件数与体积都是 12724 / 402.1 MB 且一致，manifest 仍可读、`entries` 指向的子目录名 `claude` 不变所以依旧有效；`dist\_20260903-125458.zip` 删除前先列了内容，确认里面只有 `douyin-live-comment-collector-v4.5.zip`、`fish-cooking.zip`、`manifest.json` 三项——就是「zip 扫了整个 E 盘根目录」的直接证物，与本项目无关，已删。之后复核：干跑 `dest=E:\` → `E:\AI-CLI-Backup`，12727 文件里 12714 判可跳过（增量生效）；`resolve_backup_dir('E:\')` → `E:\AI-CLI-Backup`，还原侧从盘根也能读到这份备份（`old_home=C:\Users\Administrator`、目标 `C:\Users\Administrator\.claude`、`exists=12724`，按默认「跳过已存在」还原到本机不会动任何文件）。
