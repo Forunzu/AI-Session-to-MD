@@ -9,7 +9,7 @@ import threading
 from flask import Flask, request, jsonify, send_from_directory
 import webview
 
-from backend import scanner, parser, converter
+from backend import scanner, parser, converter, migrator, cli_registry, vault
 
 
 def resource_path(rel):
@@ -33,7 +33,7 @@ _window = None
 
 
 def load_config():
-    cfg = {"sources": [], "output_dir": ""}
+    cfg = {"sources": [], "output_dir": "", "vault_custom": [], "backup_dir": ""}
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -65,6 +65,8 @@ def index():
 def api_state():
     cfg = load_config()
     return jsonify({"sources": cfg["sources"], "output_dir": cfg["output_dir"],
+                    "backup_dir": cfg.get("backup_dir") or "",
+                    "home": os.path.expanduser("~"),
                     "defaults": scanner.default_sources()})
 
 
@@ -131,8 +133,131 @@ def api_config():
         cfg["sources"] = data["sources"]
     if "output_dir" in data:
         cfg["output_dir"] = data["output_dir"]
+    for k in ("vault_custom", "backup_dir"):
+        if k in data:
+            cfg[k] = data[k]
     save_config(cfg)
     return jsonify({"ok": True})
+
+
+# ---------------- 迁移：跨 CLI ----------------
+@app.route("/api/migrate/cross", methods=["POST"])
+def api_migrate_cross():
+    """把一个会话写成目标 CLI 的原生会话文件，或写成通用交接包。
+
+    只新建文件，不动任何已有会话；工具活动一律折叠成文本摘要（绝不生成 tool_use 块）。
+    """
+    data = request.get_json(force=True) or {}
+    items = data.get("items") or ([data["item"]] if data.get("item") else [])
+    target = data.get("target") or "claude"
+    opts = {"scope": data.get("scope") or migrator.SCOPE_ALL,
+            "last_n": data.get("last_n") or migrator.DEFAULT_LAST_N,
+            "char_cap": data.get("char_cap") or migrator.DEFAULT_CHAR_CAP,
+            "with_tools": bool(data.get("with_tools", True)),
+            "mode": data.get("mode") or converter.MODE_TOOLS,
+            "target_cwd": data.get("target_cwd") or "",
+            "output_dir": data.get("output_dir") or load_config()["output_dir"]}
+    results = []
+    for it in items:
+        try:
+            results.append(dict(migrator.migrate(it, target, opts), ok=True,
+                                title=it.get("title") or ""))
+        except Exception as e:
+            results.append({"ok": False, "error": str(e), "title": it.get("title") or ""})
+    return jsonify({"results": results,
+                    "ok": sum(1 for r in results if r["ok"]),
+                    "fail": sum(1 for r in results if not r["ok"])})
+
+
+# ---------------- 迁移：备份 / 还原 ----------------
+@app.route("/api/vault/registry")
+def api_vault_registry():
+    """本机 AI CLI 目录列表。不带体积（45 个目录一次全算要十几秒），体积按行单独问。"""
+    cfg = load_config()
+    return jsonify({"entries": cli_registry.registry(custom=cfg.get("vault_custom") or []),
+                    "home": cli_registry.HOME,
+                    "scopes": [{"v": vault.SCOPE_SESSIONS, "label": "仅会话数据"},
+                               {"v": vault.SCOPE_ROOT, "label": "整个根目录（智能排除）"},
+                               {"v": vault.SCOPE_FULL, "label": "完整不排除"}]})
+
+
+@app.route("/api/vault/size")
+def api_vault_size():
+    root = request.args.get("root", "")
+    key = request.args.get("key", "")
+    if not os.path.isdir(root):
+        return jsonify({"error": "目录不存在"}), 404
+    rule = cli_registry.find(key, custom=load_config().get("vault_custom") or [])
+    return jsonify(cli_registry.measure(root, (rule or {}).get("junk") or []))
+
+
+@app.route("/api/vault/plan", methods=["POST"])
+def api_vault_plan():
+    """干跑：备份/还原共用，用 action 区分。UI 先给用户看清楚再让他决定跑不跑。"""
+    d = request.get_json(force=True) or {}
+    custom = load_config().get("vault_custom") or []
+    try:
+        if (d.get("action") or "backup") == "restore":
+            return jsonify(vault.plan_restore(d.get("backup_dir") or "",
+                                              d.get("home") or None,
+                                              d.get("overrides") or {},
+                                              d.get("keys") or None,
+                                              d.get("conflict") or vault.CONFLICT_SKIP))
+        return jsonify(vault.plan_backup(d.get("entries") or [], d.get("dest") or "",
+                                         None, custom))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/vault/rewrite/plan", methods=["POST"])
+def api_vault_rewrite_plan():
+    """路径改写单独干跑：命中多少目录 / 多少行 / 多少配置键，二次确认用。"""
+    d = request.get_json(force=True) or {}
+    try:
+        return jsonify(vault.plan_rewrite(d.get("mapping") or {}, d.get("home") or None,
+                                          d.get("roots") or []))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/vault/backup", methods=["POST"])
+def api_vault_backup():
+    d = request.get_json(force=True) or {}
+    try:
+        job = vault.start_backup(d.get("entries") or [], d.get("dest") or "", None,
+                                load_config().get("vault_custom") or [],
+                                bool(d.get("zip")))
+        return jsonify({"job_id": job["id"]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/vault/restore", methods=["POST"])
+def api_vault_restore():
+    d = request.get_json(force=True) or {}
+    try:
+        src = d.get("backup_dir") or ""
+        if src.lower().endswith(".zip"):
+            src = vault.unzip_backup(src)
+        job = vault.start_restore(src, d.get("home") or None, d.get("overrides") or {},
+                                 d.get("keys") or None,
+                                 d.get("conflict") or vault.CONFLICT_SKIP,
+                                 d.get("rewrite") or None)
+        return jsonify({"job_id": job["id"], "backup_dir": src})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/vault/job")
+def api_vault_job():
+    j = vault.get_job(request.args.get("id", ""))
+    return jsonify(j) if j else (jsonify({"error": "任务不存在"}), 404)
+
+
+@app.route("/api/vault/cancel", methods=["POST"])
+def api_vault_cancel():
+    d = request.get_json(force=True) or {}
+    return jsonify({"ok": vault.cancel_job(d.get("id") or "")})
 
 
 class Api:

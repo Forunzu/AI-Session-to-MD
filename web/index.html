@@ -16,6 +16,7 @@
       <button data-f="codex">Codex</button>
     </div>
     <button class="btn" onclick="openSettings()">⚙ 来源目录</button>
+    <button class="btn" onclick="openMigrate()">🔀 迁移</button>
     <button class="btn" onclick="reload()">↻ 刷新</button>
     <div class="spacer"></div>
     <div class="outdir">
@@ -77,6 +78,155 @@
     <div class="foot">
       <button class="btn" onclick="closeSettings()">取消</button>
       <button class="btn primary" onclick="saveSettings()">保存并重新扫描</button>
+    </div>
+  </div>
+</div>
+<div class="mask" id="migMask">
+  <div class="dialog wide">
+    <h3>🔀 会话迁移</h3>
+    <div class="tabs" id="migTabs">
+      <button class="on" data-t="cross">跨 CLI 续聊</button>
+      <button data-t="vault">备份 / 还原（换电脑）</button>
+    </div>
+    <div class="content">
+      <!-- ===== 选项卡一：跨 CLI 续聊 ===== -->
+      <div class="pane on" id="paneCross">
+        <div class="fld">
+          <label>源会话</label>
+          <div class="fval" id="migSrc">—</div>
+        </div>
+        <div class="fld">
+          <label>迁到哪</label>
+          <div class="fval">
+            <div class="segmented" id="migTarget">
+              <button class="on" data-v="claude">Claude CLI</button>
+              <button data-v="codex">Codex CLI</button>
+              <button data-v="handoff">其他 CLI（交接包）</button>
+            </div>
+          </div>
+        </div>
+        <div class="fld" id="fldCwd">
+          <label>目标工作目录</label>
+          <div class="fval">
+            <input id="migCwd" placeholder="留空则沿用原会话目录">
+            <button class="btn" onclick="pickMigCwd()">选择…</button>
+          </div>
+        </div>
+        <div class="fld">
+          <label>携带范围</label>
+          <div class="fval">
+            <select id="migScope" onchange="syncMigScope()">
+              <option value="all">全部轮次</option>
+              <option value="last" selected>最近 N 轮</option>
+              <option value="chars">字符上限（从尾部保留）</option>
+            </select>
+            <input id="migLastN" type="number" min="1" value="20" style="width:80px">
+            <input id="migCap" type="number" min="1000" step="1000" value="60000"
+                   style="width:100px;display:none">
+            <label class="chk"><input type="checkbox" id="migTools" checked> 含工具摘要</label>
+          </div>
+        </div>
+        <p class="hint" id="migNote">工具活动会折叠成 <code>〔工具 …〕</code> 文本，不会生成真实调用块（否则目标
+          CLI 下一轮直接报错）。只新建会话文件，不改动任何已有会话。</p>
+        <div id="migOut"></div>
+        <div class="acts">
+          <button class="btn primary" id="migGo" onclick="runMigrate()">开始迁移</button>
+        </div>
+      </div>
+      <!-- ===== 选项卡二：备份 / 还原 ===== -->
+      <div class="pane" id="paneVault">
+        <div class="tabs sub" id="vaultTabs">
+          <button class="on" data-t="backup">备份到别处</button>
+          <button data-t="restore">从备份还原</button>
+        </div>
+        <!-- ---- 备份 ---- -->
+        <div class="pane on" id="paneBackup">
+          <div class="fld">
+            <label>备份到</label>
+            <div class="fval">
+              <input id="bkDest" placeholder="选一个盘位 / 移动硬盘目录">
+              <button class="btn" onclick="pickBkDest()">选择…</button>
+              <label class="chk"><input type="checkbox" id="bkZip"> 完成后打包 zip</label>
+            </div>
+          </div>
+          <div class="fld">
+            <label>批量设为</label>
+            <div class="fval">
+              <select id="bkScopeAll" onchange="bkScopeAllRows(this.value)">
+                <option value="">— 选择范围 —</option>
+                <option value="sessions">仅会话数据</option>
+                <option value="root">整个根目录（智能排除）</option>
+                <option value="full">完整不排除</option>
+              </select>
+              <button class="btn ghost" onclick="bkPickPreset('claude,codex')">只选 Claude+Codex</button>
+              <button class="btn ghost" onclick="bkPickPreset('all')">全选</button>
+              <button class="btn ghost" onclick="bkPickPreset('')">全不选</button>
+              <button class="btn ghost" onclick="addVaultCustom()">＋ 自定义目录…</button>
+            </div>
+          </div>
+          <div class="vault-list" id="bkList">正在探测本机 AI CLI…</div>
+          <p class="hint">凭证文件（<code>.credentials.json</code> / <code>auth.json</code>）默认包含，
+            换机后免重新登录；备份盘或云盘一旦泄露等于账号泄露，可逐行关掉。
+            备份前请先关掉对应 CLI，运行中的 <code>*.sqlite-wal</code> 会复制到不一致快照。</p>
+          <div id="bkDry"></div>
+          <div class="acts">
+            <button class="btn" onclick="bkPlan()">预览（干跑）</button>
+            <button class="btn primary" id="bkGo" onclick="bkStart()">开始备份</button>
+          </div>
+          <div class="progress" id="bkProg"></div>
+        </div>
+        <!-- ---- 还原 ---- -->
+        <div class="pane" id="paneRestore">
+          <div class="fld">
+            <label>备份来源</label>
+            <div class="fval">
+              <input id="rsSrc" placeholder="备份目录，或 .zip 包">
+              <button class="btn" onclick="pickRsSrc()">选择…</button>
+              <button class="btn" onclick="rsPlan()">读取并预览</button>
+            </div>
+          </div>
+          <div class="fld">
+            <label>还原到 HOME</label>
+            <div class="fval">
+              <input id="rsHome" placeholder="留空 = 本机当前用户目录">
+              <button class="btn" onclick="pickRsHome()">选择…</button>
+            </div>
+          </div>
+          <div class="fld">
+            <label>同名文件</label>
+            <div class="fval">
+              <div class="segmented" id="rsConflict">
+                <button class="on" data-v="skip">跳过已存在</button>
+                <button data-v="overwrite">覆盖（先存 .bak）</button>
+              </div>
+              <span class="hint" style="margin:0">只增不删，目标端多出来的文件一律不动。</span>
+            </div>
+          </div>
+          <div class="fld">
+            <label>项目路径改写</label>
+            <div class="fval">
+              <label class="chk"><input type="checkbox" id="rsRw" onchange="syncRw()">
+                启用（改旧机项目路径）</label>
+              <button class="btn ghost" id="rsRwAdd" onclick="addMapRow('','')" disabled>＋ 一条映射</button>
+              <button class="btn ghost" id="rsRwPlan" onclick="rwPlan()" disabled>预览命中</button>
+            </div>
+          </div>
+          <div class="map-list" id="rsMap"></div>
+          <p class="hint">改写是唯一会动会话内容的操作：目录名 / JSONL 的 <code>cwd</code> /
+            <code>.claude.json</code> 的 projects 键 / <code>history.jsonl</code> 的 project 四处一起改，
+            每个被改文件先留 <code>.bak-时间戳</code>。建议先「预览命中」再执行。</p>
+          <div id="rsDry"></div>
+          <div class="acts">
+            <button class="btn primary" id="rsGo" onclick="rsStart()">开始还原</button>
+          </div>
+          <div class="progress" id="rsProg"></div>
+        </div>
+
+      </div>
+
+    </div>
+    <div class="foot">
+      <button class="btn" onclick="closeMigrate()">关闭</button>
     </div>
   </div>
 </div>

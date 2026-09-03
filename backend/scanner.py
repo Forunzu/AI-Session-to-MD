@@ -52,8 +52,8 @@ def _fmt_size(n):
 
 
 def _peek(path, source):
-    """读文件头，返回 (title, project)。"""
-    title, project = "", ""
+    """读文件头，返回 (title, project, cwd)。cwd 供迁移功能用作默认目标工作目录。"""
+    title, project, cwd = "", "", ""
     try:
         events = (parser.parse_codex(path, max_lines=HEAD_LINES) if source == "codex"
                   else parser.parse_claude(path, max_lines=HEAD_LINES))
@@ -68,15 +68,21 @@ def _peek(path, source):
                     break
     except Exception:
         pass
-    if source == "claude":
-        try:
-            for o in parser.read_json_lines(path, max_lines=HEAD_LINES):
-                if o.get("cwd"):
-                    project = os.path.basename(str(o["cwd"]).rstrip("/\\"))
+    try:
+        # Claude 每行都带 cwd；Codex 的工作目录在首行 session_meta.payload.cwd
+        for o in parser.read_json_lines(path, max_lines=HEAD_LINES):
+            if source == "codex":
+                if o.get("type") == "session_meta":
+                    cwd = str((o.get("payload") or {}).get("cwd") or "")
                     break
-        except Exception:
-            pass
-    return title or "（无文本内容）", project
+            elif o.get("cwd"):
+                cwd = str(o["cwd"])
+                break
+    except Exception:
+        pass
+    if cwd:
+        project = os.path.basename(cwd.rstrip("/\\"))
+    return title or "（无文本内容）", project, cwd
 
 
 def _iso_to_local(s):
@@ -136,7 +142,7 @@ def scan(sources):
                 fmt = forced or sniff_format(full)
                 mtime_ts = st.st_mtime
                 modified = datetime.datetime.fromtimestamp(mtime_ts).strftime("%Y-%m-%d %H:%M")
-                title, project = _peek(full, fmt)
+                title, project, cwd = _peek(full, fmt)
                 created = _codex_created(full) if fmt == "codex" else _claude_created(full)
                 if created:
                     created_str, created_ts = created
@@ -147,7 +153,7 @@ def scan(sources):
                 items.append({
                     "id": full, "path": full, "source": fmt,
                     "group_label": src.get("label", fmt),
-                    "title": title, "project": project,
+                    "title": title, "project": project, "cwd": cwd,
                     "created": created_str, "created_ts": created_ts,
                     "modified": modified, "modified_ts": mtime_ts,
                     "size": _fmt_size(st.st_size), "bytes": st.st_size,
