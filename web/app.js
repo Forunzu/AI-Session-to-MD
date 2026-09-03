@@ -192,24 +192,38 @@ function renderPreview() {
     <span class="mode-tag">导出模式：${MODES[s.mode]}</span>
     <button class="btn primary" onclick="convertCurrent()" title="按当前模式直接导出这一个会话">⬇ 导出本会话</button>
     <button class="btn ghost" onclick="migrateCurrent()" title="把这个会话迁到别的 CLI 里接着聊">↪ 迁移</button>
-    <button class="btn ghost" onclick="toggleOutline()" title="显示/隐藏指令目录">📑 目录</button></h2>
+    <button class="btn ghost" onclick="toggleOutline()" title="显示/隐藏会话目录">📑 目录</button></h2>
     <div class="meta"><span class="badge ${s.source}">${badge}</span>
     ${s.project ? `<span>${esc(s.project)}</span>` : ""}<span>创建：${esc(s.created || "—")}</span><span>改动：${esc(s.modified || "—")}</span><span>${s.size}</span></div>`;
   const showTools = s.mode !== "plain";
   const showExtra = s.mode === "full";
   const conv = $("conv");
   conv.innerHTML = "";
-  const outlineItems = [];
+  const items = [];
+  let turnNo = 0;         // 真实用户指令的序号
+  let aiTaken = true;     // 本轮是否已收录过 AI 条目（每轮只取第一条回复进目录）
   (ACTIVE_EVENTS || []).forEach((e, i) => {
     const k = e.kind;
-    let div = document.createElement("div");
-    if (k === "user" || k === "assistant") {
-      div.className = "turn " + k;
-      if (k === "user") {
-        div.id = "turn-" + i;
-        outlineItems.push({ id: "turn-" + i, label: firstLine(e.text) });
+    const div = document.createElement("div");
+    if (k === "user") {
+      if (e.noise) {
+        // CLI 自己写进会话的本地命令回显（/model、登录提示等），不是用户说的话。
+        // 正常模式整条隐藏，也不占指令序号；只有「完整原始」模式才露出来。
+        if (!showExtra) return;
+        div.className = "tool"; div.textContent = "⚙ 本地命令记录\n" + e.text;
+      } else {
+        turnNo += 1; aiTaken = false;
+        div.className = "turn user"; div.id = "turn-" + i;
+        items.push({ id: div.id, role: "user", no: turnNo, label: firstLine(e.text) });
+        div.innerHTML = `<div class="role">🧑 我</div><div class="bubble">${esc(e.text)}</div>`;
       }
-      div.innerHTML = `<div class="role">${k === "user" ? "🧑 我" : "🤖 AI"}</div><div class="bubble">${esc(e.text)}</div>`;
+    } else if (k === "assistant") {
+      div.className = "turn assistant"; div.id = "turn-" + i;
+      if (!aiTaken) {
+        aiTaken = true;
+        items.push({ id: div.id, role: "ai", no: turnNo, label: firstLine(e.text) });
+      }
+      div.innerHTML = `<div class="role">🤖 AI</div><div class="bubble">${esc(e.text)}</div>`;
     } else if (k === "tool_call" && showTools) {
       div.className = "tool";
       div.innerHTML = `<div class="tool-name">🔧 ${esc(e.name)}</div>${esc(typeof e.input === "string" ? e.input : JSON.stringify(e.input, null, 2))}`;
@@ -223,34 +237,68 @@ function renderPreview() {
     conv.appendChild(div);
   });
   if (!conv.children.length) conv.innerHTML = '<div class="empty">该模式下无可显示内容</div>';
-  renderOutline(outlineItems);
+  renderOutline(items);
 }
 
-// ---------- 右侧指令目录 ----------
-function firstLine(text, cap = 46) {
-  const lines = (text || "").split("\n");
+// ---------- 右侧会话目录 ----------
+// 终端回显里的 ANSI 转义（ESC[1m 之类）会把目录标签弄成乱码，取首行时先剥掉。
+// 用 fromCharCode 拼正则而不直写控制符：源码里埋真的 ESC 字节会被编辑器/diff 弄掉；
+// 而匹配时又必须带上 ESC，否则会把用户真写的 [Image #9] 一起吃掉。
+var _ESC = String.fromCharCode(27);
+var _ANSI_RE = new RegExp(_ESC + "\\[[0-9;?]*[A-Za-z]", "g");
+function firstLine(text, cap = 42) {
+  const lines = String(text || "").replace(_ANSI_RE, "").split("\n");
   for (let ln of lines) {
     ln = ln.replace(/^[#>\-\*\s`]+/, "").trim();
     if (ln) return ln.length > cap ? ln.slice(0, cap) + "…" : ln;
   }
-  return "（空指令）";
+  return "（空）";
 }
 
-let _io = null;
+let OL_ITEMS = [];        // {id, role:"user"|"ai", no, label}
+let OL_VIEW = "all";      // all | user | ai —— 切会话时保留用户选的视图
+let _olActive = "";
+let _io = null, _vis = null;
+
 function renderOutline(items) {
+  OL_ITEMS = items || [];
+  _olActive = "";
+  drawOutline();
+}
+
+function setOutlineView(v) {
+  OL_VIEW = v;
+  drawOutline();
+}
+
+function drawOutline() {
   const box = $("outline");
   if (_io) { _io.disconnect(); _io = null; }
-  if (!items.length) {
-    box.innerHTML = '<div class="ol-head">📑 指令目录</div><div class="ol-empty">该模式下没有可导航的指令</div>';
-    return;
+  const mine = OL_ITEMS.filter(x => x.role === "user");
+  const ai = OL_ITEMS.filter(x => x.role === "ai");
+  const pick = OL_VIEW === "user" ? mine : OL_VIEW === "ai" ? ai : OL_ITEMS;
+  const tabs = [["all", "全部", OL_ITEMS.length], ["user", "只看我", mine.length],
+                ["ai", "只看 AI", ai.length]]
+    .map(([v, t, n]) => `<button data-v="${v}"${v === OL_VIEW ? ' class="on"' : ""} title="${t}：${n} 条">${t}</button>`)
+    .join("");
+  let html = `<div class="ol-head"><div class="ol-title">📑 会话目录
+      <span>${pick.length}${pick.length === OL_ITEMS.length ? "" : " / " + OL_ITEMS.length} 条</span></div>
+    <div class="ol-tabs">${tabs}</div></div>`;
+  if (!pick.length) {
+    html += `<div class="ol-empty">${OL_ITEMS.length ? "这个视图下没有条目" : "该模式下没有可导航的内容"}</div>`;
+  } else {
+    pick.forEach(it => {
+      html += `<div class="ol-item ${it.role}" data-target="${it.id}">
+        <span class="ol-ico">${it.role === "user" ? "🧑" : "🤖"}</span>
+        <span class="ol-num">${it.no || "·"}</span>
+        <span class="ol-txt" title="${esc(it.label)}">${esc(it.label)}</span></div>`;
+    });
   }
-  let html = `<div class="ol-head">📑 指令目录 <span>(${items.length})</span></div>`;
-  items.forEach((it, n) => {
-    html += `<div class="ol-item" data-target="${it.id}"><span class="ol-num">${n + 1}</span><span class="ol-txt" title="${esc(it.label)}">${esc(it.label)}</span></div>`;
-  });
   box.innerHTML = html;
+  box.querySelectorAll(".ol-tabs button").forEach(b => { b.onclick = () => setOutlineView(b.dataset.v); });
   box.querySelectorAll(".ol-item").forEach(el => { el.onclick = () => jumpTo(el.dataset.target); });
-  setupSpy(items);
+  if (pick.length) setupSpy(pick);
+  if (_olActive) markActive(_olActive);
 }
 
 function jumpTo(id) {
@@ -260,17 +308,35 @@ function jumpTo(id) {
 
 function setupSpy(items) {
   const conv = $("conv");
+  const order = items.map(it => it.id);      // 文档顺序
+  _vis = new Set();
+  // 命中区（顶部 28%）里常同时有好几条，取最靠上的那一条，避免高亮来回跳。
+  // IntersectionObserver 只回报"变化"的条目，所以自己维护可见集合。
   _io = new IntersectionObserver(entries => {
-    entries.forEach(en => { if (en.isIntersecting) markActive(en.target.id); });
-  }, { root: conv, rootMargin: "0px 0px -70% 0px", threshold: 0 });
+    entries.forEach(en => {
+      if (en.isIntersecting) _vis.add(en.target.id); else _vis.delete(en.target.id);
+    });
+    for (const id of order) { if (_vis.has(id)) { markActive(id); return; } }
+  }, { root: conv, rootMargin: "0px 0px -72% 0px", threshold: 0 });
   items.forEach(it => { const el = document.getElementById(it.id); if (el) _io.observe(el); });
 }
 
 function markActive(id) {
   const box = $("outline");
-  box.querySelectorAll(".ol-item").forEach(el => el.classList.toggle("on", el.dataset.target === id));
-  const on = box.querySelector(".ol-item.on");
-  if (on) on.scrollIntoView({ block: "nearest" });
+  _olActive = id;
+  let on = null;
+  box.querySelectorAll(".ol-item").forEach(el => {
+    const hit = el.dataset.target === id;
+    el.classList.toggle("on", hit);
+    if (hit) on = el;
+  });
+  if (!on) return;
+  // 手动补滚，不用 scrollIntoView：它会连带滚动祖先容器，和正在滚动的对话区抢方向。
+  const head = box.querySelector(".ol-head");
+  const pad = head ? head.offsetHeight : 0;
+  const br = box.getBoundingClientRect(), ir = on.getBoundingClientRect();
+  if (ir.top < br.top + pad) box.scrollTop -= (br.top + pad - ir.top);
+  else if (ir.bottom > br.bottom) box.scrollTop += (ir.bottom - br.bottom);
 }
 
 function toggleOutline() { document.body.classList.toggle("no-outline"); }

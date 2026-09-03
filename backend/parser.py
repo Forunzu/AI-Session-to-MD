@@ -3,6 +3,7 @@
 
 统一事件 (event)：
   {"kind": "user"|"assistant", "text": str}
+  {"kind": "user", "text": str, "noise": True}   # CLI 写进会话的本地命令记录，非用户所言
   {"kind": "thinking", "text": str}          # 仅“完整原始”模式用
   {"kind": "tool_call",   "name": str, "input": any}
   {"kind": "tool_result", "output": str}
@@ -23,6 +24,11 @@ _NOISE_PREFIXES = (
     "<command-name>",
     "<local-command",
 )
+
+# CLI 自己生成的“助手消息”：登录失败提示、`No response requested.` 之类。实测这类记录
+# message.model == "<synthetic>"（同条记录常带 isApiErrorMessage / error / apiErrorStatus）。
+# 它们不是模型说的话，按系统消息处理，只在“完整原始”模式露出。
+SYNTHETIC_MODEL = "<synthetic>"
 
 # Claude 会话里真正的用户输入被包在 USER MESSAGE BEGIN/END 之间
 _USER_MSG_RE = re.compile(r"USER MESSAGE BEGIN ---\s*(.*?)\s*--- USER MESSAGE END", re.S)
@@ -89,41 +95,69 @@ def _extract_codex_text(content):
 
 # ------------------------- Claude -------------------------
 def parse_claude(path, max_lines=None):
+    """Claude JSONL → 事件流。
+
+    两处去噪（都在实测样本上验证过）：
+    ① 本地命令记录（`<local-command-caveat>` / `<command-name>/model` / `<local-command-stdout>`）
+       是 CLI 写进会话的回显，不是用户说的话，打 noise 标记交给上层决定露不露。判据取
+       「原始文本是噪音 **且** 剥壳后仍是噪音」——真指令常被 CONTEXT ENTRY 包着，只看原始
+       文本会把它一起误杀。
+    ② API 报错后 CLI 会把同一条指令重新发一遍，于是同一句话在文件里出现好几次；报错通知
+       本身是 `<synthetic>` 助手记录。把通知归成 system 之后，这些重试就是「中间没有任何
+       实际推进的相邻重复」，按 Codex 侧同样的规则折叠。
+    """
     events = []
+    last_user = None        # 最近一条已输出的真实用户指令
+    progressed = True       # 自那条指令之后，是否真的推进过（助手正文 / 思考 / 工具）
     for o in read_json_lines(path, max_lines):
-        if o.get("type") not in ("user", "assistant"):
+        typ = o.get("type")
+        if typ not in ("user", "assistant"):
             continue
         msg = o.get("message") or {}
-        role = msg.get("role", o.get("type"))
+        if typ == "assistant" and msg.get("model") == SYNTHETIC_MODEL:
+            role = "system"
+        else:
+            role = msg.get("role") or typ
         content = msg.get("content")
-        if isinstance(content, str):
-            raw = content.strip()
-            txt = clean_user_text(raw) if role == "user" else raw
-            if txt:
-                events.append({"kind": role, "text": txt,
-                               "noise": role == "user" and is_noise(raw)})
+        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
+        if not isinstance(blocks, list):
             continue
-        if isinstance(content, list):
-            for b in content:
-                if not isinstance(b, dict):
+        for b in blocks:
+            if not isinstance(b, dict):
+                continue
+            bt = b.get("type")
+            if bt == "text":
+                raw = (b.get("text") or "").strip()
+                if not raw:
                     continue
-                bt = b.get("type")
-                if bt == "text":
-                    raw = b.get("text", "").strip()
-                    txt = clean_user_text(raw) if role == "user" else raw
-                    if txt:
-                        events.append({"kind": role, "text": txt,
-                                       "noise": role == "user" and is_noise(raw)})
-                elif bt == "thinking":
-                    th = (b.get("thinking") or b.get("text") or "").strip()
-                    if th:
-                        events.append({"kind": "thinking", "text": th})
-                elif bt == "tool_use":
-                    events.append({"kind": "tool_call", "name": b.get("name", ""),
-                                   "input": b.get("input", {})})
-                elif bt == "tool_result":
-                    events.append({"kind": "tool_result",
-                                   "output": _stringify(b.get("content"))})
+                if role == "user":
+                    txt = clean_user_text(raw)
+                    if not txt:
+                        continue
+                    junk = is_noise(raw) and is_noise(txt)
+                    if not junk:
+                        if txt == last_user and not progressed:
+                            continue        # CLI 重试同一条指令，折叠
+                        last_user, progressed = txt, False
+                    events.append({"kind": "user", "text": txt, "noise": junk})
+                elif role == "assistant":
+                    events.append({"kind": "assistant", "text": raw})
+                    progressed = True
+                else:
+                    events.append({"kind": "system", "text": raw})
+            elif bt == "thinking":
+                th = (b.get("thinking") or b.get("text") or "").strip()
+                if th:
+                    events.append({"kind": "thinking", "text": th})
+                    progressed = True
+            elif bt == "tool_use":
+                events.append({"kind": "tool_call", "name": b.get("name", ""),
+                               "input": b.get("input", {})})
+                progressed = True
+            elif bt == "tool_result":
+                events.append({"kind": "tool_result",
+                               "output": _stringify(b.get("content"))})
+                progressed = True
     return events
 
 # ------------------------- Codex -------------------------

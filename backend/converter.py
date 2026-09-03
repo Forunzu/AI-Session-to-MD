@@ -64,6 +64,13 @@ def convert(events, meta, mode=MODE_TOOLS):
     for e in events:
         k = e.get("kind")
         if k == "user":
+            if e.get("noise"):
+                # CLI 写进会话的本地命令回显（`/model`、登录提示等），不是用户说的话。
+                # 正常模式整条丢掉，也不占用户指令的序号；完整原始模式折叠保留。
+                if mode == MODE_FULL:
+                    out.append("<details>\n<summary>⚙ 本地命令记录</summary>\n\n"
+                               f"```\n{e['text']}\n```\n\n</details>\n")
+                continue
             # 每条用户指令生成「## N. 首行摘要」短标题，正文原样放在下面。
             # 这样任何 Markdown 编辑器（Typora / VS Code / Obsidian / 语雀）都能
             # 自动生成可点击的大纲/目录，且无需把长正文改成标题格式。

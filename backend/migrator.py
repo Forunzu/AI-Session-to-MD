@@ -112,12 +112,11 @@ def _tool_digest(e):
 
 
 def _is_wrapper_user(e):
-    """user 事件是否只是上下文包裹噪音。
+    """user 事件是否只是 CLI 写进会话的噪音（上下文包裹 / 本地命令回显）。
 
-    parser 的 noise 标记看的是「原始文本」，而真实指令常常被 CONTEXT ENTRY 包裹之后才被
-    clean_user_text 提取出来，所以这里用清洗后的文本再复核一次，避免把真指令当噪音丢掉。
+    判据由 parser 统一负责（它已对原始文本与剥壳后的文本各判一次），这里只读标记。
     """
-    return bool(e.get("noise")) and parser.is_noise(e.get("text") or "")
+    return bool(e.get("noise"))
 
 
 def _is_marker_user(txt):
