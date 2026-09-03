@@ -28,8 +28,10 @@
 把一个聊到一半的会话搬到另一个 CLI 里接着聊，不用手动复制粘贴。也可在预览标题栏点「↪ 迁移」直接迁当前会话。
 
 - **原生续聊**：直接生成目标 CLI 自己的会话文件
-  - Claude → `~/.claude/projects/<项目slug>/<新sessionId>.jsonl`，之后 `cd <项目目录> && claude --resume` 选它
-  - Codex → `~/.codex/sessions/年/月/日/rollout-….jsonl`，之后 `codex resume "<路径>"`
+  - Claude → `~/.claude/projects/<项目slug>/<新sessionId>.jsonl`，之后 `cd <项目目录> && claude --resume <会话 id>`
+  - Codex → `~/.codex/sessions/年/月/日/rollout-….jsonl`，之后 `codex resume <会话 id>`
+    （**收的是 id 不是路径**；传路径会报 `No saved session found with ID …`。忘了 id 就用
+    `codex resume --all` 从列表挑，`--all` 关掉默认的按当前目录过滤）
 - **通用交接包**：任何 CLI 都能用。生成 `handoff_<标题>_<日期>/`，内含 `会话记录.md` + `交接提示词.txt`，
   把提示词整段粘进目标 CLI 即可。
 - **携带范围**：全部轮次 / 最近 N 轮（默认 20）/ 字符上限（默认 6 万，从尾部保留）。
@@ -50,7 +52,10 @@
 - **凭证文件**（`~/.claude/.credentials.json`、`~/.codex/auth.json`）默认包含，换机后免重新登录；
   可逐行关掉。备份盘或云盘泄露等于账号泄露，自行权衡。
 - **增量**：同名同大小同修改时间（±2s）的文件直接跳过，重复备份很快。
-- 可选备份完打包 zip；还原端接受目录或 zip。
+- **备份目标要独立目录**：备份会在目标里直接铺 `manifest.json` + 各 CLI 子目录，所以选到盘根（如 `E:\`）
+  会自动改用 `E:\AI-CLI-Backup\`（干跑清单里会写明落盘位置），避免清单散在盘根、也避免打包时去扫整个盘。
+- 可选备份完打包 zip：放在备份目录的**同级**，只收 `manifest.json` 与清单里记下的各 CLI 子目录；
+  打包失败也不影响已复制好的文件。还原端接受目录或 zip，选到备份的**上一层**时会自动下钻一层找 manifest。
 - **还原只增不删**：同名文件按策略跳过或覆盖，覆盖前先存 `.bak-<时间戳>`；目标端多出来的文件一律不动。
 - **路径改写**（默认关，勾选后生效）：换机时项目目录变了（如 `E:\在办项目` → `D:\Projects`），
   一次改到四处 —— `projects/<slug>/` 目录名、JSONL 每行的 `cwd`、`~/.claude.json` 的 `projects` 键（正斜杠）、

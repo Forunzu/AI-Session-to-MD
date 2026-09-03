@@ -306,8 +306,11 @@ def write_claude_session(turns, target_cwd, title=""):
                  "leafUuid": parent, "sessionId": sid})
     path = os.path.join(proj, sid + ".jsonl")
     _write_jsonl(path, recs)
+    # Claude 的 --resume 认 sessionId，也能不带参数走列表；列表按当前目录过滤，所以先 cd。
     return {"target": "claude", "path": path, "session_id": sid, "project_dir": proj,
-            "cwd": target_cwd, "resume": 'cd "%s" && claude --resume' % target_cwd}
+            "cwd": target_cwd,
+            "resume": 'cd "%s" && claude --resume %s' % (target_cwd, sid),
+            "resume_alt": 'cd "%s" && claude --resume   （不带 id 走列表挑）' % target_cwd}
 
 
 # ---------------- 通道 A-2：写 Codex rollout ----------------
@@ -374,8 +377,13 @@ def write_codex_rollout(turns, target_cwd):
         lines.append(ev("task_complete", {"turn_id": tid, "last_agent_message": None,
                                           "started_at": started}))
     _write_jsonl(path, lines)
+    # codex resume 收的是**会话 id（UUID）或线程名**，不是文件路径：
+    # 传路径会直接报 `No saved session found with ID <路径>`（实测 codex-cli 0.145.0）。
+    # 另外不带 id 的 picker 默认按 cwd 过滤，所以先 cd 到目标目录再 resume。
     return {"target": "codex", "path": path, "session_id": sid, "project_dir": day,
-            "cwd": target_cwd, "resume": 'codex resume "%s"' % path}
+            "cwd": target_cwd,
+            "resume": 'cd "%s" && codex resume %s' % (target_cwd, sid),
+            "resume_alt": "codex resume --all   （不记 id 时用列表挑，--all 关掉 cwd 过滤）"}
 
 
 # ---------------- 通道 B：通用交接包 ----------------

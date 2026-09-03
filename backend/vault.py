@@ -33,6 +33,36 @@ SCHEMA = 1
 MTIME_TOL = 2                 # 秒；同名同大小且 mtime 相差在此以内视为同一份
 TOP_N = 10                    # 干跑里列出的最大文件个数
 LONG_PATH = 240               # 超过这个长度就加 \\?\ 前缀
+DEFAULT_SUBDIR = "AI-CLI-Backup"   # 目标选到盘根时自动落到这个子目录
+
+
+def is_drive_root(p):
+    """p 是不是盘根（E:\\ / E:/）或 UNC 共享根（\\\\srv\\share）。
+
+    实测过的坑：选 `E:\\` 当备份目录会把 manifest.json 和各 CLI 子目录直接摊在盘根上，
+    而且打 zip 时 `os.walk(dest)` 会遍历整个 E 盘（撞上 pagefile.sys 直接 Permission denied）。
+    """
+    if not p:
+        return False
+    q = os.path.abspath(p)
+    if os.path.splitdrive(q)[1].strip("\\/") == "":     # E:\  /  E:/
+        return True
+    if q.startswith("\\\\"):                            # \\srv\share 只有两段
+        return len([x for x in q.strip("\\").split("\\") if x]) <= 2
+    return q == os.sep
+
+
+def normalize_dest(dest):
+    """把备份目标规整成一个专用目录，返回 (最终目录, 提示或 '')。
+
+    盘根一律下钻一层：备份要能整目录搬走/打包/识别，摊在盘根上这三件都做不了。
+    """
+    if not dest:
+        return dest, ""
+    if is_drive_root(dest):
+        final = os.path.join(os.path.abspath(dest), DEFAULT_SUBDIR)
+        return final, "目标是盘根目录，已自动改用子目录 %s（备份需要独立目录才能打包和识别）" % final
+    return os.path.abspath(dest), ""
 
 
 def now_stamp():
@@ -65,10 +95,18 @@ def same_file(src, dst):
 
 
 def _is_subpath(child, parent):
-    """child 是否在 parent 里面（含相等）。防止把备份目录设成源目录的子目录。"""
+    """child 是否在 parent 里面（含相等）。防止把备份目录设成源目录的子目录。
+
+    走 realpath：Windows 上同一个目录可能写成 8.3 短名（C:\\Users\\ADMINI~1\\…）或经过
+    junction/符号链接，纯字符串比会漏判，那道「目标不能在源里面」的护栏就白设了。
+    """
+    def norm(p):
+        try:
+            return os.path.normcase(os.path.realpath(os.path.abspath(p)))
+        except Exception:
+            return os.path.normcase(os.path.abspath(p))
     try:
-        a = os.path.normcase(os.path.abspath(child))
-        b = os.path.normcase(os.path.abspath(parent))
+        a, b = norm(child), norm(parent)
     except Exception:
         return False
     return a == b or a.startswith(b.rstrip("\\/") + os.sep)
@@ -149,7 +187,9 @@ def _walk(top_dir, rel0, junk, secrets, include_secrets):
 # ---------------- 干跑 ----------------
 def plan_backup(entries, dest, home=None, custom=None):
     """entries: [{key, scope}]。返回每个 CLI 的文件数/字节数 + 最大的几个文件 + 已存在可跳过数。"""
-    out = {"action": "backup", "dest": dest, "entries": [], "files": 0, "bytes": 0,
+    dest, dest_note = normalize_dest(dest)
+    out = {"action": "backup", "dest": dest, "dest_note": dest_note, "entries": [],
+           "files": 0, "bytes": 0,
            "skip_files": 0, "skip_bytes": 0, "top": [], "secrets": []}
     rules = []
     for en in entries:
@@ -254,6 +294,7 @@ def start_backup(entries, dest, home=None, custom=None, make_zip=False):
     """起一个后台备份任务，立刻返回 job（前端拿 id 轮询）。"""
     if not dest:
         raise ValueError("请先选择备份目录")
+    dest, _note = normalize_dest(dest)
     rules = [r for r in (reg.find(e["key"], home, custom) for e in entries) if r]
     if not rules:
         raise ValueError("没有可备份的目录")
@@ -306,7 +347,11 @@ def _run_backup(job, entries, dest, home, custom, make_zip):
         job["result"] = {"dest": dest, "manifest": os.path.join(dest, MANIFEST)}
         if make_zip and not job["cancel"]:
             job["current"] = "打包 zip…"
-            job["result"]["zip"] = _make_zip(dest)
+            try:
+                job["result"]["zip"] = _make_zip(dest, man)
+            except Exception as ex:                 # 打包失败不该抹掉已经复制好的备份
+                job["errors"].append("打包 zip 失败：%s（文件已备份到 %s）" % (ex, dest))
+                job["result"]["zip_error"] = str(ex)
         job["state"] = "canceled" if job["cancel"] else "done"
     except Exception as ex:
         job["errors"].append(str(ex))
@@ -315,18 +360,54 @@ def _run_backup(job, entries, dest, home, custom, make_zip):
         job["current"] = ""
 
 
-def _make_zip(dest):
-    """把备份目录打成同级 zip（不压缩会话 JSONL 之外的大文件也无妨，走 DEFLATED）。"""
-    zp = dest.rstrip("\\/") + "_" + now_stamp() + ".zip"
+def _make_zip(dest, man):
+    """把备份目录打成 zip，放在备份目录的**同级**。
+
+    只收 manifest + manifest 里记下的各 CLI 子目录，不 `os.walk(dest)`：
+    ① 目标目录里可能还有别人的文件，不该一起打包；
+    ② zip 自己就在旁边，走整棵树会把不断变大的 zip 也收进去；
+    ③ 早先 `dest.rstrip('\\\\/')` 遇到 `E:\\` 会退化成 `E:` —— 这是「当前盘当前目录」的
+       相对写法，zip 被写到进程 cwd 里，同时 walk 整个 E 盘撞上 pagefile.sys 直接失败。
+    """
+    root = os.path.abspath(dest)
+    parent, base = os.path.split(root.rstrip("\\/"))
+    zp = os.path.join(parent or root, "%s_%s.zip" % (base or "backup", now_stamp()))
+    items = [MANIFEST] + [en.get("dest") or en["key"] for en in man.get("entries") or []]
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as z:
-        for dirpath, _dirs, files in os.walk(dest):
-            for fn in files:
-                p = os.path.join(dirpath, fn)
-                z.write(long_path(p), os.path.relpath(p, dest))
+        for it in items:
+            p = os.path.join(root, it)
+            if os.path.isfile(long_path(p)):
+                z.write(long_path(p), it)
+                continue
+            for dirpath, _dirs, files in os.walk(long_path(p)):
+                for fn in files:
+                    fp = os.path.join(dirpath, fn)
+                    z.write(long_path(fp), os.path.relpath(fp, root))
     return zp
 
 
 # ---------------- 还原 ----------------
+def resolve_backup_dir(d):
+    """选到备份的**上一层**（比如盘根，而备份在 E:\\AI-CLI-Backup\\）时自动下钻一层。
+
+    备份现在固定落在专用子目录里，用户很容易只选到它的父目录，直接报「不是备份目录」太生硬。
+    只在恰好有一个子目录带 manifest 时才下钻，避免猜错。
+    """
+    if not d or os.path.isfile(os.path.join(d, MANIFEST)):
+        return d
+    hits = []
+    try:
+        for name in sorted(os.listdir(long_path(d))):
+            sub = os.path.join(d, name)
+            if os.path.isdir(long_path(sub)) and os.path.isfile(os.path.join(sub, MANIFEST)):
+                hits.append(sub)
+                if len(hits) > 1:
+                    break
+    except OSError:
+        return d
+    return hits[0] if len(hits) == 1 else d
+
+
 def read_manifest(backup_dir):
     p = os.path.join(backup_dir, MANIFEST)
     if not os.path.isfile(p):
@@ -357,6 +438,7 @@ def restore_targets(backup_dir, home=None, overrides=None):
     默认把 manifest 里记的旧 HOME 换成当前 HOME：源 C:\\Users\\A\\.claude 记在
     manifest 里，新机 HOME 变了也能落到新机的 ~/.claude。
     """
+    backup_dir = resolve_backup_dir(backup_dir)
     man = read_manifest(backup_dir)
     home = home or reg.HOME
     old_home = man.get("home") or home
@@ -395,6 +477,7 @@ def _dest_of(item, bucket, rel):
 def plan_restore(backup_dir, home=None, overrides=None, keys=None,
                  conflict=CONFLICT_SKIP):
     """还原干跑：每条目录会写多少文件、多少字节，多少个目标已存在（会跳过或备份覆盖）。"""
+    backup_dir = resolve_backup_dir(backup_dir)
     info = restore_targets(backup_dir, home, overrides)
     out = {"action": "restore", "backup_dir": backup_dir, "old_home": info["old_home"],
            "home": info["home"], "conflict": conflict, "entries": [],
@@ -430,6 +513,7 @@ def plan_restore(backup_dir, home=None, overrides=None, keys=None,
 def start_restore(backup_dir, home=None, overrides=None, keys=None,
                   conflict=CONFLICT_SKIP, rewrite=None):
     """起后台还原任务。rewrite: {'enabled':True,'mapping':{旧路径:新路径}} 才做路径改写。"""
+    backup_dir = resolve_backup_dir(backup_dir)
     read_manifest(backup_dir)             # 先校验是本工具的备份
     job = new_job("restore")
     t = threading.Thread(target=_run_restore, daemon=True,

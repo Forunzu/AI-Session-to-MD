@@ -421,8 +421,8 @@ function arm(btn, label) {
 // ---------- 跨 CLI 续聊 ----------
 const MIG_NOTE_TAIL = "工具活动折叠成 <code>〔工具 …〕</code> 文本，不生成真实调用块（缺配对的结果块会让目标 CLI 下一轮直接报错）。只新建文件，不改动任何已有会话。";
 const MIG_NOTES = {
-  claude: "写入 <code>~/.claude/projects/&lt;项目slug&gt;/</code> 下一个新会话文件，之后 <code>claude --resume</code> 就能在列表里选到它。",
-  codex: "写入 <code>~/.codex/sessions/年/月/日/rollout-….jsonl</code>，之后 <code>codex resume &lt;路径&gt;</code> 载入。",
+  claude: "写入 <code>~/.claude/projects/&lt;项目slug&gt;/</code> 下一个新会话文件，之后 <code>cd &lt;项目目录&gt; && claude --resume &lt;会话 id&gt;</code> 接着聊。",
+  codex: "写入 <code>~/.codex/sessions/年/月/日/rollout-….jsonl</code>，之后 <code>codex resume &lt;会话 id&gt;</code> 载入 —— 收的是 id 不是路径，传路径会报 <code>No saved session found with ID</code>。",
   handoff: "生成 <code>handoff_…</code> 目录（会话记录.md + 交接提示词.txt）到顶部设的输出目录，任何 CLI 都能用。"
 };
 
@@ -513,7 +513,8 @@ function renderMigResult(res) {
       row.innerHTML = `<div class="t">✓ ${esc(r.title || "会话")}
         <span class="mode-tag">${r.target === "handoff" ? "交接包" : (r.target === "codex" ? "Codex" : "Claude")}${r.turns ? " · " + r.turns + "/" + r.total_turns + " 轮" : ""}</span></div>
         <div class="p">${esc(r.path)}</div>
-        <div class="cmd"><code>${esc(r.resume || "")}</code></div>`;
+        <div class="cmd"><code>${esc(r.resume || "")}</code></div>
+        ${r.resume_alt ? `<div class="p" style="margin:6px 0 0">备选：${esc(r.resume_alt)}</div>` : ""}`;
       const cmd = row.querySelector(".cmd");
       const b1 = document.createElement("button");
       b1.className = "btn ghost"; b1.textContent = "复制命令";
@@ -648,6 +649,7 @@ async function bkPlan(quiet) {
   $("bkDry").innerHTML = '<p class="dry-sum">正在统计…</p>';
   try {
     const p = await post("/api/vault/plan", { action: "backup", dest: dest, entries: entries });
+    if (p.dest && p.dest !== dest) $("bkDest").value = p.dest;   // 后端把盘根规整成子目录了
     renderBkDry(p);
     if (!quiet) toast(`干跑完成：${p.files} 个文件 / ${p.size}`);
     return p;
@@ -658,8 +660,9 @@ async function bkPlan(quiet) {
 }
 
 function renderBkDry(p) {
-  let h = `<p class="dry-sum">合计 <b>${p.files}</b> 个文件 / <b>${p.size}</b>；
+  let h = `<p class="dry-sum">备份到 <b>${esc(p.dest || "")}</b>；合计 <b>${p.files}</b> 个文件 / <b>${p.size}</b>；
     其中 ${p.skip_files} 个与目标端一致可跳过（${p.skip_size}），本次实际约写入 <b>${p.net_size}</b>。</p>`;
+  if (p.dest_note) h += `<p class="hint" style="margin-left:0">${esc(p.dest_note)}</p>`;
   h += `<table class="dry-table"><tr><th>目录</th><th>范围</th><th>凭证</th>
     <th class="num">文件</th><th class="num">体积</th><th class="num">可跳过</th></tr>`;
   (p.entries || []).forEach(e => {
@@ -729,6 +732,9 @@ function pollJob(id, boxId, onDone) {
     stopPoll();
     box.querySelector("button").remove();
     let tail = `<p class="dry-sum" style="margin-top:8px">状态：<b>${j.state}</b> · ${j.done_files} 个文件 / ${j.done_size} · 跳过 ${j.skipped} · 用时 ${j.elapsed}s</p>`;
+    const rs = j.result || {};
+    if (rs.dest) tail += `<p class="hint" style="margin-left:0">落盘位置：<code>${esc(rs.dest)}</code>` +
+      (rs.zip ? `<br>zip：<code>${esc(rs.zip)}</code>` : "") + "</p>";
     if (j.error_count) {
       tail += `<p class="hint warn" style="margin-left:0">${j.error_count} 处错误（最近几条）：<br>` +
         j.errors.slice(-5).map(esc).join("<br>") + "</p>";
