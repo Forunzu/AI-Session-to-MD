@@ -1,5 +1,5 @@
 # context_AI会话转MD_2026-08-20.md
-> 最后更新：2026-09-03 17:25 | 当前阶段：v4.2 已修完备份包结构 / 命名 / 还原认路三处缺陷，exe 已重打包（16:35）并本地入库（`5430c3f` + `986e5f2`）；待真机续聊确认 → push → 发 Release
+> 最后更新：2026-09-03 18:20 | 当前阶段：v4.3 已修完会话目录三处根因（CLI 噪音记录、重试重复指令、sticky 透缝）并加上「我 / AI」分色 + 三视图切换，exe 已重打包（18:08）；待提交 → 真机续聊确认 → push → 发 Release
 
 ---
 
@@ -39,9 +39,9 @@ build_exe.bat     PyInstaller 单文件打包脚本
 ---
 
 ## ✅ 当前进度
-- 已完成：v1（解析/扫描/转换 + GUI + 单文件 exe）→ v2（指令目录 + MD 自动标题 + 单条导出）→ v3（双日期显示 + 手动排序 + 目录高亮 CSS 修复 + 开源发布）→ **v4（迁移功能：跨 CLI 续聊 + 换机备份还原，后端 3 个新模块 + 9 条新路由 + 迁移弹窗，已自测通过）** → **v4.1（真机实测反馈修复：续聊命令改发会话 id、备份目标选到盘根自动改用 `AI-CLI-Backup` 子目录、zip 落点与失败隔离、还原目录自动下钻）** → **v4.2（备份包结构与命名 + 还原认路：带日期的快照目录、zip 套同名顶层文件夹、`备份说明.txt`、`locate_backup` 覆盖四种选法、0 文件给原因并拒绝开跑、续聊命令去掉 `&&`）**。
-- 进行中：v4.2 收尾——`vault.py` / `app.py` / `web/app.js` / `web/index.html` / `migrator.py` / `style.css` / `README.md` 全部改完并提交 `5430c3f`（context 另提 `986e5f2`）；沙箱 9/9 `ALL OK`、真实数据只读复核（用户那个失败选法 `E:\claude` 现在读出 12728 文件 / 407.1 MB）、Flask test_client 逐路由实跑、`node --check` 通过、exe 已重打包（`dist\会话转MD.exe` 21.6MB / 09-03 16:35，启动冒烟 4 个进程稳定存活）。剩「真机续聊确认 + 新 exe 手感实测 → push 7 个提交 + 发 Release v1.1.0」。
-- 待启动：按反馈调整；可选 WebView2 固定版打包。（v4.1 那三个残留已按用户拍板处理完：`E:\manifest.json` + `E:\claude\` 已移进 `E:\AI-CLI-Backup\`、`dist\_20260903-125458.zip` 已删。v4.2 实测又留下一份重复副本 `E:\claude` + `E:\AI-CLI-Backup_20260903-151509.zip`，等用户拍板删除）
+- 已完成：v1（解析/扫描/转换 + GUI + 单文件 exe）→ v2（指令目录 + MD 自动标题 + 单条导出）→ v3（双日期显示 + 手动排序 + 目录高亮 CSS 修复 + 开源发布）→ **v4（迁移功能：跨 CLI 续聊 + 换机备份还原，后端 3 个新模块 + 9 条新路由 + 迁移弹窗，已自测通过）** → **v4.1（真机实测反馈修复：续聊命令改发会话 id、备份目标选到盘根自动改用 `AI-CLI-Backup` 子目录、zip 落点与失败隔离、还原目录自动下钻）** → **v4.2（备份包结构与命名 + 还原认路：带日期的快照目录、zip 套同名顶层文件夹、`备份说明.txt`、`locate_backup` 覆盖四种选法、0 文件给原因并拒绝开跑、续聊命令去掉 `&&`）** → **v4.3（会话目录重做：Claude 侧去噪 + 重试折叠、目录列「我的指令 + 每轮 AI 首条回复」、🧑/🤖 分色、全部/只看我/只看 AI 三视图、scroll-spy 与 sticky 头修复）**。
+- 进行中：v4.3 收尾——`parser.py` / `converter.py` / `migrator.py` / `web/app.js` / `web/style.css` / `README.md` 六个文件改完并全部自测通过（真实会话 33 条用户事件 = 真实 21 + 噪音 12、目录 35 条（我 21 / AI 14）、导出 36 个标题 0 脏、完整原始模式保留 12 个 `⚙ 本地命令记录` 块；22 个 Claude 文件 641 真实 + 56 噪音；Claude/Codex 双向往返各 6/6 轮；5 条路由 200、45 个 CLI；`node --check` 通过），exe 已重打包（`dist\会话转MD.exe` 20.6MB / 09-03 18:08，启动冒烟存活后清进程）。剩「真机续聊确认 + 新 exe 手感实测 → push 10 个提交 + 发 Release v1.1.0」。
+- 待启动：按反馈调整；可选 WebView2 固定版打包。另有一处已知未修：`scanner._peek()` 拿首条用户消息当标题，于是少数会话在列表里显示成 `<local-command-caveat>` / `<app-context>`；同时列表里混着 sub-agent 的分支会话文件。（v4.1 那三个残留已按用户拍板处理完：`E:\manifest.json` + `E:\claude\` 已移进 `E:\AI-CLI-Backup\`、`dist\_20260903-125458.zip` 已删。v4.2 实测又留下一份重复副本 `E:\claude` + `E:\AI-CLI-Backup_20260903-151509.zip`，等用户拍板删除）
 
 ## 🌐 开源信息
 - 仓库（Public）：https://github.com/Forunzu/AI-Session-to-MD
@@ -133,6 +133,21 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ---
 
+### v4.3 2026-09-03
+**触发原因：** 用户截图反馈「这个指令目录的模块还是有问题」，并提出新需求「我想让这个目录在显示时能够区分我说的话和 AI 说的话。甚至能够有个选项叫只看用户，或者只看 AI」。照着截图和真实数据挖，痛点是三条各自独立的：① **目录里混着一堆不是我说的话**——`<local-command-caveat>`、`<command-name>/login`、`<local-command-stdout>Set model to …` 这些 CLI 自己写进会话的回显，被当成了指令，截图那个会话 34 条里有 12 条是它们（全量抽查 22 个 Claude 会话 = 641 真 + 56 噪），导出的 MD 里也照样变成 `## N. <local-command-caveat>` 脏标题；② **同一句指令重复好几遍**——API 403 之后 CLI 会把同一条指令重发，报错通知自己是 `model:"<synthetic>"` 的助手记录，看起来像正常一问一答，于是目录里连着出现 4 条一样的；③ **目录顶部有内容从头部下面透出来**——`.outline` 自己的 `padding-top: 8px` 在 `position: sticky` 的头之上，滚动时那 8px 的缝里能看见正文条目在走。另外原来的目录只列用户指令，AI 说了什么完全没法定位。
+**变更内容：**
+- 修改 `backend/parser.py`：重写 `parse_claude`。新增 `SYNTHETIC_MODEL = "<synthetic>"`，`model` 是它的助手记录归成 `kind:"system"`（登录失败、`No response requested.` 都是 CLI 自己生成的，不是模型说的话）；字符串型与数组型 content 统一成 `blocks` 一条路径处理；`noise` 判据改成「原始文本是噪音 **且** 剥壳后仍是噪音」（真指令常被 CONTEXT ENTRY 包着，只看原始文本会连它一起误杀）；用 `last_user` / `progressed` 折叠「中间没有任何实际推进的相邻重复用户消息」，与 `parse_codex` 同一套规则。
+- 修改 `backend/converter.py`：`convert()` 里 `noise` 的用户事件在纯对话/对话+工具模式整条丢掉，**也不占 `## N.` 的序号**；完整原始模式折叠成 `<details><summary>⚙ 本地命令记录</summary>`。
+- 修改 `backend/migrator.py`：`_is_wrapper_user` 简化成 `bool(e.get("noise"))`，双重判据已上移到 parser，注释同步改。
+- 修改 `web/app.js`：`renderPreview` 里噪音条目在正常模式隐藏、完整原始模式渲染成 `⚙ 本地命令记录` 块；目录条目从「只有用户指令」扩成 `{id, role, no, label}`——每条真实指令 + 每轮 AI 的**首条**回复；新增 `OL_ITEMS`/`OL_VIEW` 模块状态与 `drawOutline()`/`setOutlineView()`，头部加「全部 / 只看我 / 只看 AI」三选一（各自条数放 tooltip），切会话保留视图选择；`firstLine` 先剥 ANSI 转义再取首行；scroll-spy 改成自维护可见集合、取文档顺序最靠上那条（原来是「最后一个 isIntersecting 的赢」，会来回跳）；`markActive` 用 `scrollTop` 手动补滚代替 `scrollIntoView`（后者会连带滚动祖先容器，和正在滚的对话区抢方向）。
+- 修改 `web/style.css`：`.outline` 的 `padding` 从 `8px 0` 改成 `0 0 10px`（透缝的根因）、宽度 250→264px；`.ol-head` 拆成 `.ol-title` + `.ol-tabs` 两行；新增 `.ol-tabs` / `.ol-ico` / `.ol-item.ai`（缩进 + 淡色）；`.ol-item` 的 `scroll-margin-top` 40→70px。
+- 「指令目录」全部改称「**会话目录**」（按钮 tooltip、头部标题、README），因为里面已经不只有指令。
+- 修改 `README.md`：功能段新增「会话目录（📑）」条目；说明段新增「Claude 去噪」条目（本地命令回显 / `<synthetic>` 记录 / 报错重发折叠三件事分别怎么处理）。
+**当前状态：** 已定稿（真实数据探针 + 往返自检 + 路由实跑 + `node --check` + exe 重打包冒烟通过）。
+**未解决的分歧：** 压缩续聊注入的那种用户记录（`This session is being continued from a previous conversation…`）没有当噪音丢——它确实是独立的一轮，正文里还带着摘要，是这个会话唯一的历史留存，丢了会掉真内容。代价是长会话的目录里会出现几条首行一样的条目。要不要给它单独一个折叠样式，等用户看过实物再定。
+
+---
+
 ## 🪤 踩坑记录
 - [scanner/计数] 初次 `find` 报 Claude 117 个会话，实际当前只有 50 个（Claude Code 会清理/压缩旧会话目录，顶层目录从 13 变 9）。**旧状态 117 已失效；已验证新状态：claude 50 + codex 47 = 97**。一律以文件系统实时扫描为准，不信任历史计数。
 - [parser/Codex] Codex 在 resume/压缩时会重放历史，`role=user` 消息含完整上下文注入且大量重复（首条提示重复 7 次）。→ 用户回合只取 `event_msg.user_message`，并折叠「中间没有助手/工具回合的相邻重复」，同时保留真正被隔开的重复输入（如多次「继续」）。
@@ -169,6 +184,12 @@ build_exe.bat     PyInstaller 单文件打包脚本
 - [v4.2/0 文件不能算成功] 还原干跑 0 文件时既不解释原因、也照样允许点「开始还原」，跑完还报 done——用户完全看不出是「全被跳过」还是「根本没读到」。→ 干跑返回 `warn` + 逐条 `missing`，前端显示「读的是 <路径>」并给缺失条目打 ⚠，0 文件时按钮拒绝武装；`start_restore` 层级不对直接 `raise`，不起注定空转的 job。
 - [v4.2/一块盘上多份备份] 修完下钻逻辑后发现 `E:\` 下同时存在 `AI-CLI-Backup` 和 `claude` 两份备份，「自动下钻」在这种情况下等于随机挑一份还原，属于会覆盖真实数据的错。→ 多于一份就报「E:\ 下面有 2 份备份（AI-CLI-Backup、claude），请直接选中要还原的那一份」。**宁可报错让用户指明，也不猜。**
 - [v4.2/PowerShell 不认 `&&`] v4.1 给的 `cd "<cwd>" && codex resume <id>` 在 PowerShell 5.1 里报「标记"&&"不是此版本中的有效语句分隔符」（`&&` 要 PowerShell 7+），而 cmd.exe 又不认 `;`——**没有一种连接符能同时兼容两个 shell**。→ Codex 用根命令自带的 `-C/--cd`（必须写在 `resume` 子命令**前面**）一行搞定；Claude 没有对应参数，就给两行让用户分别回车，CSS 加 `white-space: pre-wrap` 保证换行不被吞。
+- [v4.3/Claude 也有噪音记录] 一直以为「CLI 往会话里写非用户内容」只是 Codex 的毛病，实测 Claude 同样写三类：本地命令回显（`<local-command-caveat>` / `<command-name>` / `<local-command-stdout>`，正文里还带裸 ANSI 转义）、`model:"<synthetic>"` 的假助手记录（登录失败、`No response requested.`）、以及 API 报错后**把同一条指令重发**。全量抽查 22 个 Claude 会话：641 条真实用户事件 + 56 条噪音（截图那个会话 34 条里 12 条是噪音）。→ 三类分别按 noise / system / 折叠处理，parser 一处解决，converter、migrator、前端都只读标记。
+- [v4.3/noise 判据要判两次] `is_noise(原始文本)` 单独用会误杀：真指令常被 `--- CONTEXT ENTRY BEGIN ---` 包着（原始文本命中噪音前缀），得靠 `clean_user_text` 剥壳后才是真话。→ 判据固定为「原始文本是噪音 **且** 剥壳后仍是噪音」。原来 migrator 里靠再判一次兜住了，parser 却把标记按单次判据发给了前端和 converter——**同一个语义的判定只能有一个出处**，已上移到 parser。
+- [v4.3/标记没人消费等于没做] v4 起 parser 就在给 `noise` 打标记，但 converter 和前端从来没读它，于是脏记录照样进 MD 的 `## N.` 标题、照样进目录。→ 打标记的同时必须把三个消费点（预览、目录、导出）一起改；这次还顺带保证噪音**不占指令序号**，否则导出的标题编号会跳号。
+- [v4.3/sticky 头上方的透缝] `.outline` 自己的 `padding-top: 8px` 在 `position: sticky; top: 0` 的子元素**之上**，滚动内容会从这 8px 的缝里露出来（截图里能看到条目在头部上方走过）。→ 滚动容器的 `padding-top` 必须给 0，需要留白就加在 sticky 头自己的 `padding` 里。
+- [v4.3/scroll-spy 取谁] 原来的 `entries.forEach(en => if isIntersecting markActive(...))` 是「本批最后一个相交的赢」，多条同时进命中区时高亮会来回跳。→ 自己维护可见集合（进出各增删），每次回调按**文档顺序**取最靠上那条。另外 `scrollIntoView({block:"nearest"})` 会连带滚动祖先容器、和正在滚的对话区抢方向，改成算 `getBoundingClientRect` 只动目录自己的 `scrollTop`。
+- [v4.3/源码里别埋控制字符] 写 ANSI 剥离正则时把真的 ESC(0x1b)/BEL(0x07) 字节直接写进了 `web/app.js`，`Read` 看不见、diff 也会弄掉。→ 改成 `String.fromCharCode(27)` + `new RegExp` 拼。同时**匹配必须带上 ESC**：只写 `\[[0-9;?]*[A-Za-z]` 会把用户真写的 `[Image #9]` 吃成 `mage #9]`（`[` + 空 + `I`）。已用 node 实测两条：`ESC[1mSet model to` → `Set model to`，`[Image #9] …` 原样保留。
 
 ---
 
@@ -203,6 +224,10 @@ build_exe.bat     PyInstaller 单文件打包脚本
 - [2026-09-03 v4.2] 认不准就报错、不猜 → 一个目录下有多份备份时自动下钻等于随机选一份往真实 HOME 里灌，是不可逆的错；报「有 N 份，请指明」代价只是多点一次。同理，干跑 0 文件时不再允许开跑，而是给出「期望看到 root\ / home\」的具体原因。
 - [2026-09-03 v4.2] 凡是给用户照抄的命令，只用**两个 shell 都认**的形态 → `&&` 在 PowerShell 5.1 直接 ParserError、`;` 在 cmd 又不行，没有通用连接符。所以优先找 CLI 自己的参数（Codex 的根级 `-C/--cd`），实在没有就给多行分别执行，不赌用户的 shell 是哪个。
 - [2026-09-03 v4.2] 备份目录里额外放一份人类可读的 `备份说明.txt` → manifest 是给程序读的 JSON，换机时人翻到这个目录（可能几个月后）需要一眼看懂「这是什么、从哪来、含不含凭证、怎么还原」。用 utf-8-sig 存，Windows 记事本双击不乱码。
+- [2026-09-03 v4.3] CLI 噪音记录**不删只藏**：正常模式隐藏、「完整原始」模式折叠展示 → 「完整原始」这个模式的承诺就是「文件里有什么都给你看」，把记录整个抹掉会让它名不副实，也断了排查会话文件本身问题的路。否掉「在 parser 里直接 drop」（下游再想看就没了）和「一直显示」（就是用户这次反馈的问题）。
+- [2026-09-03 v4.3] 目录条目扩成「我的每条指令 + 每轮 AI 的**首条**回复」，AI 不逐条列 → 一轮里 AI 常有十几条文本块（夹在工具调用之间），全列进去目录会被 AI 淹掉、失去导航价值；取首条既能定位到这一轮的回复位置，又保持一问一答的节奏。序号和用户那条共用同一个轮次编号，「只看 AI」时序号仍能对回原轮。
+- [2026-09-03 v4.3] 视图做成「全部 / 只看我 / 只看 AI」三选一，而不是两个复选框 → 用户原话是「有个选项叫只看用户，或者只看 AI」，三选一一眼就知道现在在看什么；两个复选框会多出「都不勾」这种无意义状态。选择存在模块变量里，切会话保留，因为这是**看会话的习惯**而不是某个会话的属性。
+- [2026-09-03 v4.3] 「指令目录」改名「会话目录」 → 里面已经不只有指令；名字跟不上内容会让用户以为 AI 那些条目是 bug。改名同时动了按钮 tooltip、头部标题、README 三处，保持一个说法。
 
 ---
 
@@ -211,11 +236,17 @@ build_exe.bat     PyInstaller 单文件打包脚本
    `codex -C "E:\在办项目\脚本管理软件开发" resume 01a0661c-de9e-7006-b62c-fd43a71f85fe`（一行，`-C` 在 `resume` 前面）；
    Claude 侧两行分别回车：`cd "E:\在办项目\脚本管理软件开发"` → `claude --resume <id>`。
    本机权限分类器连挡 3 次 `codex exec resume`，只做了静态核对（rollout 文件名 UUID == `payload.session_id`）。
-2. **v4.2 手感实测**（双击 16:35 的新 exe）：① 备份到任意目录，确认新建的是 `claude_日期-时分\`、里面有 `manifest.json` + `备份说明.txt` + `claude\`；② 勾 zip，解压确认只解出一个同名文件夹；③ 还原侧把「备份目录」分别选那一层、它的上一层、里面的 `claude\`，确认三次都能读出文件数与「备份于 / 来自」。
+2. **新 exe 手感实测**（双击 18:08 的 exe，一次把 v4.2 + v4.3 都验掉）：
+   ① 备份到任意目录，确认新建的是 `claude_日期-时分\`、里面有 `manifest.json` + `备份说明.txt` + `claude\`；
+   ② 勾 zip，解压确认只解出一个同名文件夹；
+   ③ 还原侧把「备份目录」分别选那一层、它的上一层、里面的 `claude\`，确认三次都能读出文件数与「备份于 / 来自」；
+   ④ **会话目录**：随便开一个长会话，看条目里不再出现 `/model` 之类的本地命令回显与重复指令，🧑/🤖 分得清，
+      「全部 / 只看我 / 只看 AI」切换正常，点条目能跳、滚正文时高亮跟着走且不来回跳、目录框自己会补滚。
 3. **清理 E 盘残留**（用户的数据，等用户拍板）：`E:\claude`（12728 文件 / 407.1 MB，20260903-151507）与 `E:\AI-CLI-Backup_20260903-151509.zip`（242.5 MB）都是 `E:\AI-CLI-Backup` 那份的重复副本，`E:\manifest.json` 已经不在了。删掉这两个即可，`E:\AI-CLI-Backup` 保留。
-4. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 7 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1 + `10913a5` context + `fd38b17` context + `5430c3f` v4.2 + `986e5f2` context），刻意压在真机确认之后。
-5. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
-6. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
+4. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 10 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1 + `10913a5` context + `fd38b17` context + `5430c3f` v4.2 + `986e5f2` context + `020c359` context + `10cafb7` v4.3 + 本条 context），刻意压在真机确认之后。
+5. （小）顺手修列表标题：`scanner._peek()` 取首条用户消息当标题，遇到 `<local-command-caveat>` / `<app-context>` 开头的会话就显示成这些标签。parser 侧的 `noise` 判据已经能复用，改动量很小。
+6. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
+7. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
 
 ---
 
@@ -257,3 +288,8 @@ build_exe.bat     PyInstaller 单文件打包脚本
 **关键结论 / 产出：** 三处缺陷根因分别是 **zip 缺顶层文件夹**（惯例问题，不是代码 bug）、**目录名没有时间维度**（同盘二次备份会覆盖）、**归位函数只考虑了一个方向**（用户把 json 往里挪，方向正好相反，于是条目目录被算成 `E:\claude\claude`，12728 个文件全判缺失 → 界面 0 条）。修的过程中自己踩了两个：一是最后的兜底 `return only or d` 又把路径钻回子目录，二是 `plan_restore` 与 `restore_targets` 各归位一次导致父/子来回跳、算出 `<dir>\<key>\<key>`——**归位必须只对原始输入做一次**，已写进代码注释。另外发现「自动下钻」在 `E:\` 下有两份备份时等于随机挑一份往真实 HOME 里灌，改成报错不猜。界面那句「备份于 —，来自 —」不是数据问题，是后端压根没返回 `manifest` 字段（前后端字段名不匹配只会静默显示空值，不报错）。验证：沙箱 9 例 `ALL OK`（含 zip stem 断言、四种选法、坏层级被 `start_restore` 拒绝、二次备份 4/4 全跳过）；真实数据只读复核 `E:\claude` → 12728 文件 / 407.1 MB / created 20260903-151507 / host PC-20250303XWLM，`E:\AI-CLI-Backup\claude` 上浮到 `E:\AI-CLI-Backup`，`E:\` 正确报歧义；Flask test_client 实跑 9 个入口（备份干跑 `E:\` → `E:\claude_20260903-1628`、12713 文件 / 397.9 MB；还原干跑、歧义、非备份目录、5 个静态与 API 路由）；`node --check web/app.js` 通过；PyInstaller 重打包 `dist\会话转MD.exe` 21.6MB / 16:35，启动冒烟 4 个进程稳定存活后 `taskkill` 清掉。
 **遗留问题：** ① 真机续聊仍未确认（`codex -C "<cwd>" resume <id>` 一行、Claude 两行），需用户在场；② v4.2 手感实测（新 exe 走一遍备份/解压/三种还原选法）；③ 代码与 context 已本地入库（`5430c3f` 7 文件 / `986e5f2`），仍用 `git -c` 临时注入 Forunzu 身份、未改全局配置；连上之前 5 个共 **7 个提交未推送**，push + Release v1.1.0 仍压在真机确认之后；④ `E:\claude` 与 `E:\AI-CLI-Backup_20260903-151509.zip` 已是 `E:\AI-CLI-Backup` 的重复副本，删不删等用户拍板。
 **残留处理（用户拍板「移进 AI-CLI-Backup + 删 zip」，已执行）：** `E:\claude\` 与 `E:\manifest.json` 同盘 `os.replace` 移进 `E:\AI-CLI-Backup\`（瞬间完成、不产生复制），移动前后文件数与体积都是 12724 / 402.1 MB 且一致，manifest 仍可读、`entries` 指向的子目录名 `claude` 不变所以依旧有效；`dist\_20260903-125458.zip` 删除前先列了内容，确认里面只有 `douyin-live-comment-collector-v4.5.zip`、`fish-cooking.zip`、`manifest.json` 三项——就是「zip 扫了整个 E 盘根目录」的直接证物，与本项目无关，已删。之后复核：干跑 `dest=E:\` → `E:\AI-CLI-Backup`，12727 文件里 12714 判可跳过（增量生效）；`resolve_backup_dir('E:\')` → `E:\AI-CLI-Backup`，还原侧从盘根也能读到这份备份（`old_home=C:\Users\Administrator`、目标 `C:\Users\Administrator\.claude`、`exists=12724`，按默认「跳过已存在」还原到本机不会动任何文件）。
+
+### 2026-09-03 18:20
+**本次做了什么：** v4.3——用户反馈「这个指令目录的模块还是有问题，另外我想让它区分我说的话和 AI 说的话，甚至有个只看用户 / 只看 AI 的选项」。先照着用户给的截图去真实会话文件里对，把「有问题」拆成三个互不相干的根因逐个修：① `parser.parse_claude` 整段重写——CLI 自己写进会话的本地命令回显（`<local-command-caveat>` / `<command-name>` / `<local-command-stdout>`，里面还带真的 ANSI 转义）打 `noise` 标记，`model == "<synthetic>"` 的假助手记录（登录失败、`No response requested.`）改判成 `system`；② 同一条指令因 API 报错被 CLI 重发时折叠（`last_user` + `progressed` 两个标记，中间没有正文/思考/工具就算没推进，与 `parse_codex` 用的是同一条规则）；③ `.outline` 自己的 `padding-top` 在 sticky 头**上方**，内容从那条缝里透出来。然后按用户要的做目录本身：条目扩成「我的每条指令 + 每轮 AI 的首条回复」、🧑/🤖 图标 + AI 行缩进变淡、头部加「全部 / 只看我 / 只看 AI」三视图（带条数、切会话保留选择），scroll-spy 换成「自己维护可见集合 + 按文档顺序取第一条」，跳转与目录补滚都改成手算 `scrollTop`。顺带把「指令目录」全局改名「会话目录」（按钮 tooltip / 头部 / README 三处），`converter` 把噪音从 plain/tools 与 `## N.` 编号里剔掉、只在「完整原始」折叠保留，`migrator._is_wrapper_user` 改成直接读 parser 的标记。
+**关键结论 / 产出：** 三个根因里最值得记的是第二个和「标记没人消费」——`noise` 这个字段在 v4 就有了，但只有 migrator 在用，converter 和前端都没读，于是标记形同没做，噪音照样进目录、还在导出的 MD 里占掉 `## N.` 的序号。**打了标记就必须逐个下游确认有没有消费**，否则不算修完。另外 noise 判据必须判两次（原始文本 + `clean_user_text` 之后的文本都还是噪音才算），否则被 `--- CONTEXT ENTRY BEGIN ---` 包起来的真实指令会被误杀。自己还踩了个低级坑：写 ANSI 剥离正则时把真的 ESC(0x1b)/BEL(0x07) 字节直接写进了 `web/app.js`，`Read` 看不见、Edit 又匹配不上，最后用单引号 `python -c` + `chr()` 重写成 `String.fromCharCode(27)` 拼正则才干净；而且正则**必须带 ESC**，不带就会把用户真写的 `[Image #9]` 一起吃掉。验证：截图里那个会话 33 条用户事件 = 真实 21 + 噪音 12，目录 35 条（我 21 / AI 14），导出 36 个标题 0 个脏，「完整原始」里 12 个 `⚙ 本地命令记录` 块都在；22 个 Claude 文件合计 641 真实 + 56 噪音；Codex 解析零回归；Claude/Codex 双向往返各 6/6 轮一致；Flask 5 条路由 200、`/api/vault/registry` 45 个 CLI；`node --check` 通过；重打包 `dist\会话转MD.exe` 20.6MB / 18:08，启动冒烟进程存活后清掉。探针脚本按交付规则写在 `%TEMP%`，没进仓库。
+**遗留问题：** ① 本次六个源文件已提交 `10cafb7`、context 紧随其后另提一条（仍用 `git -c` 注入 Forunzu 身份，不改全局）；② 真机续聊确认与新 exe 手感实测（这次要连会话目录一起验）仍需用户在场；③ 顺手发现但**故意没修**：`scanner._peek()` 拿首条用户消息当标题，于是少数会话在列表里显示成 `<local-command-caveat>` / `<app-context>`，且列表里混着 sub-agent 的分支会话文件——已记进「下一步」第 5 条；④ push（**10 个未推送提交**）+ Release v1.1.0 依旧压在真机确认之后。
