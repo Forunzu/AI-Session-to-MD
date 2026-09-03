@@ -41,7 +41,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
 ## ✅ 当前进度
 - 已完成：v1（解析/扫描/转换 + GUI + 单文件 exe）→ v2（指令目录 + MD 自动标题 + 单条导出）→ v3（双日期显示 + 手动排序 + 目录高亮 CSS 修复 + 开源发布）→ **v4（迁移功能：跨 CLI 续聊 + 换机备份还原，后端 3 个新模块 + 9 条新路由 + 迁移弹窗，已自测通过）** → **v4.1（真机实测反馈修复：续聊命令改发会话 id、备份目标选到盘根自动改用 `AI-CLI-Backup` 子目录、zip 落点与失败隔离、还原目录自动下钻）**。
 - 进行中：v4.1 收尾——`migrator.py` / `vault.py` / `web/app.js` / `README.md` 已改完并过沙箱 E2E，提交 `20c15d3`；exe 已按修复后的代码重打包（`dist\会话转MD.exe` 20.6MB / 09-03 13:53，冒烟「全部通过」，包内 app.js 与 vault 都已带修复）。剩「真机 `codex resume <id>` 载入确认 → push + 发 Release v1.1.0」。`codex exec resume` 实测被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），暂以静态核对代替：rollout 文件名 UUID == `session_meta.payload.session_id`，id 形态有合法目标。
-- 待启动：清理上次失败备份的残留（`E:\manifest.json` + `E:\claude\` 402.1 MB + `dist\_20260903-125458.zip` 75.1 MB，待用户拍板「移进 AI-CLI-Backup」或「删掉」）；按反馈调整；可选 WebView2 固定版打包。
+- 待启动：按反馈调整；可选 WebView2 固定版打包。（上次失败备份的三个残留已按用户拍板处理完：`E:\manifest.json` + `E:\claude\` 已同盘移进 `E:\AI-CLI-Backup\`、`dist\_20260903-125458.zip` 已删）
 
 ## 🌐 开源信息
 - 仓库（Public）：https://github.com/Forunzu/AI-Session-to-MD
@@ -177,12 +177,11 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ## 🔜 下一步（优先级排序）
 1. **真机 `codex resume <id>` 载入确认**（需用户在场）：`cd "E:\在办项目\脚本管理软件开发" && codex resume 01a06598-8ee3-7869-b043-c5e355f9557a`，确认能列出并载入接着聊。本次 `codex exec resume` 被本机权限分类器连挡 3 次，只做了静态核对（rollout 文件名 UUID == `payload.session_id`）。Claude 侧同理跑一次 `claude --resume <id>`。
-2. **残留清理**（等用户拍板）：`E:\manifest.json` + `E:\claude\`（12724 文件 / 402.1 MB，**内容是完整可用的备份**）建议整体移进 `E:\AI-CLI-Backup\`，移完就是一份规范备份、下次备份会全跳过；`dist\_20260903-125458.zip`（75.1 MB，内容是 E 盘根目录的杂物）直接删。
-3. **重跑一次盘根备份**验证修复：目标填 `E:\`，应看到自动改成 `E:\AI-CLI-Backup\`、干跑清单写明落盘位置、job 收在 `done` 而不是 `error`，勾了打包则 zip 落在 `E:\AI-CLI-Backup_<时间戳>.zip`。
-4. **迁移弹窗手感实测**（双击 13:53 的新 exe）：跨 CLI 的目录选择/范围切换与结果区两条命令，备份的体积懒加载、干跑表格、进度条与取消，还原的 manifest 摘要与映射表。
-5. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 3 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1），刻意压在真机确认之后。
-6. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
-7. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
+2. **（可选）重跑一次真备份**：干跑侧已验证——目标填 `E:\` 会自动改成 `E:\AI-CLI-Backup\`，对已搬过去的那份备份 12727 个文件里 12714 个判为可跳过（剩下 13 个是这之后真被改动的会话文件），即增量识别正常。想确认整条 job 收在 `done` 而不是 `error`，可以再点一次「开始」。
+3. **迁移弹窗手感实测**（双击 13:53 的新 exe）：跨 CLI 的目录选择/范围切换与结果区两条命令，备份的体积懒加载、干跑表格、进度条与取消，还原的 manifest 摘要与映射表。
+4. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 4 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1 + `10913a5` context），刻意压在真机确认之后。
+5. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
+6. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
 
 ---
 
@@ -217,4 +216,5 @@ build_exe.bat     PyInstaller 单文件打包脚本
 ### 2026-09-03 13:40
 **本次做了什么：** v4.1——修用户真机实测暴露的两个缺陷。① 续聊命令：查 `codex resume --help` 与 `claude --help` 确认参数形态，把 `migrator.py` 两个 writer 返回的 `resume` 改成 id 形态并各加一条 `resume_alt`，前端 `MIG_NOTES` 与结果区、README 同步改。② 盘根备份：`vault.py` 加 `is_drive_root` / `normalize_dest` / `DEFAULT_SUBDIR`，`plan_backup` 与 `start_backup` 入口先规整目标并把结果回传前端写回输入框；`_make_zip` 改为「只收 manifest + 清单条目、放备份目录同级」并用独立 try 隔离失败；`_is_subpath` 换 `realpath`；新增 `resolve_backup_dir` 让还原能从上一层自动下钻。③ 清点用户那次失败留下的残留并逐个查明来历，未擅自删改。
 **关键结论 / 产出：** 两个缺陷的根因都不在「复制/写文件」本身，而在**边界处理**：一个是给用户的命令没经过实跑（照抄了印象里的路径形态），一个是 `"E:\\".rstrip("\\/")` 变成盘符相对路径 + `os.walk` 扫整个盘。用户那次备份其实**已经全部成功**（12724 文件 / 402.1 MB 完整落在 `E:\claude\`），只是被打包一步的 `Permission denied` 判成了 error——所以把「打包失败」与「备份失败」拆开记是这次最要紧的一处改动。验证：`node --check web/app.js` 通过、5 个后端文件 `py_compile` 通过；`is_drive_root`/`normalize_dest` 真值表（含 UNC 共享根）逐条对；E2E① zip 落在备份目录同级、内容恰好是 `manifest.json + tinycli/root/...`、排除无关文件与自身；E2E② 备份→从上一层还原→重映射到新 HOME（`done 4 文件 · 跳过 0`），长名与 8.3 短名两种「目标在源目录内」都被拦住；Flask 路由实跑一次 `dest=E:\` 的干跑，返回 `dest=E:\AI-CLI-Backup` + 提示语。代码提交 `20c15d3`，随后重打包 exe（20.6MB / 13:53）并冒烟「全部通过」——包内 `/app.js` 三处新字符串都在、包内 vault 对 `E:\` 也返回 `E:\AI-CLI-Backup`，即两处修复确实进了用户会拿到的那个 exe（列表已扫到 118 个会话）。
-**遗留问题：** ① 真机 `codex resume <id>` 载入确认——`codex exec resume` 被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），只做了静态核对（rollout 文件名 UUID == `payload.session_id`）；② 残留文件等用户拍板（`E:\manifest.json` + `E:\claude\` 建议移进 `E:\AI-CLI-Backup\`，`dist\_20260903-125458.zip` 建议删）；③ 3 个提交仍未推送、Release v1.1.0 未发。顺带推翻了上一版的「`os.replace` 能改名就说明 exe 没被占用」——本次 2 个实例在跑、改名成功但 PyInstaller 的 `os.remove` 照样 WinError 5，已改成用 `os.remove` 判定并先 `taskkill`。
+**遗留问题：** ① 真机 `codex resume <id>` 载入确认——`codex exec resume` 被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），只做了静态核对（rollout 文件名 UUID == `payload.session_id`）；② 4 个提交仍未推送、Release v1.1.0 未发。顺带推翻了上一版的「`os.replace` 能改名就说明 exe 没被占用」——本次 2 个实例在跑、改名成功但 PyInstaller 的 `os.remove` 照样 WinError 5，已改成用 `os.remove` 判定并先 `taskkill`。
+**残留处理（用户拍板「移进 AI-CLI-Backup + 删 zip」，已执行）：** `E:\claude\` 与 `E:\manifest.json` 同盘 `os.replace` 移进 `E:\AI-CLI-Backup\`（瞬间完成、不产生复制），移动前后文件数与体积都是 12724 / 402.1 MB 且一致，manifest 仍可读、`entries` 指向的子目录名 `claude` 不变所以依旧有效；`dist\_20260903-125458.zip` 删除前先列了内容，确认里面只有 `douyin-live-comment-collector-v4.5.zip`、`fish-cooking.zip`、`manifest.json` 三项——就是「zip 扫了整个 E 盘根目录」的直接证物，与本项目无关，已删。之后复核：干跑 `dest=E:\` → `E:\AI-CLI-Backup`，12727 文件里 12714 判可跳过（增量生效）；`resolve_backup_dir('E:\')` → `E:\AI-CLI-Backup`，还原侧从盘根也能读到这份备份（`old_home=C:\Users\Administrator`、目标 `C:\Users\Administrator\.claude`、`exists=12724`，按默认「跳过已存在」还原到本机不会动任何文件）。
