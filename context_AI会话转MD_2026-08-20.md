@@ -1,5 +1,5 @@
 # context_AI会话转MD_2026-08-20.md
-> 最后更新：2026-09-03 11:20 | 当前阶段：v4 迁移功能已实现并自测通过，待真机续聊确认 + 重打包发 Release
+> 最后更新：2026-09-03 11:45 | 当前阶段：v4 已实现自测通过、exe 已重打包、已本地提交；待真机续聊确认后推送并发 Release
 
 ---
 
@@ -40,7 +40,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ## ✅ 当前进度
 - 已完成：v1（解析/扫描/转换 + GUI + 单文件 exe）→ v2（指令目录 + MD 自动标题 + 单条导出）→ v3（双日期显示 + 手动排序 + 目录高亮 CSS 修复 + 开源发布）→ **v4（迁移功能：跨 CLI 续聊 + 换机备份还原，后端 3 个新模块 + 9 条新路由 + 迁移弹窗，已自测通过）**。
-- 进行中：v4 收尾——真机 `claude --resume` / `codex resume` 续聊确认、重打包 exe、发新 Release。
+- 进行中：v4 收尾——exe 已重打包（`dist\会话转MD.exe` 20.6MB / 09-03 11:34，启动冒烟通过）、10 个文件已本地提交 `59c31c0`；剩真机 `claude --resume` / `codex resume` 续聊确认，通过后再 push 并发新 Release。
 - 待启动：按反馈调整；可选 WebView2 固定版打包。
 
 ## 🌐 开源信息
@@ -122,6 +122,8 @@ build_exe.bat     PyInstaller 单文件打包脚本
 - [v4/断言误判] 校验 JSONL 里的路径不能做原始文本包含判断——JSON 里反斜杠是 `\\` 转义写法。→ 解析后比值。
 - [v4/沙箱扫不到会话] 测试把 `CLAUDE_CONFIG_DIR`/`CODEX_HOME` 指到空沙箱后，`scanner.default_sources()` 也跟着指过去，一个会话都扫不到。→ 配置里显式写真实来源目录用于**读**，环境变量只管**写**，两边分开。
 - [v4/原生弹窗] 大动作二次确认没用 `window.confirm`（pywebview 里不保证可靠）→ 同一个按钮点两次：第一次出干跑清单并把按钮文案换成「确认…（再点一次）」，20 秒后自动复位。
+- [打包/查进程] **Git Bash 里 `tasklist | grep "会话转MD"` 永远匹配不到**：tasklist 输出是 CP936，grep 的 pattern 是 UTF-8，中文名对不上，于是报「没有正在运行的 exe」——实际有 3 个进程在跑（本次就误判了一次，只是恰好打包在启动之前所以没撞上 `WinError 5`）。另外 `tasklist /fo csv` 会被 MSYS 把 `/fo` 转成 `C:/Program Files/Git/fo` 而报「无效参数」，`iconv -f CP936` 遇到非法字节直接吐空。→ 统一改用 Python：`subprocess.run(["tasklist"], capture_output=True).stdout.decode("cp936","replace")`，收尾也用 Python 调 `taskkill /F /IM`。
+- [打包/占用复核] 判断 exe 是否被占用别只看进程表，直接试 `os.replace(p, p+'.t')` 再改回来：能重命名就说明没锁，可以打包。比数进程可靠。
 
 ---
 
@@ -151,8 +153,8 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ## 🔜 下一步（优先级排序）
 1. **真机续聊确认**（需用户在场）：迁一个真实会话到 Claude 与 Codex，实际跑 `cd "<目录>" && claude --resume` 与 `codex resume "<rollout 路径>"`，确认列表能列出、载入后能接着聊。这一步同时验证「Codex 不需要写 `session_index.jsonl`」的推断。
-2. **迁移弹窗手感实测**（需双击 exe）：跨 CLI 选项卡的目录选择/范围切换，备份选项卡的体积懒加载、干跑表格、进度条与取消，还原选项卡的 manifest 摘要与映射表。
-3. 重新打包 `dist\会话转MD.exe`（打包前先关掉正在运行的 exe，否则 `WinError 5`），提交并发新 Release（附件用 ASCII 名 `ChatToMD.exe`）。
+2. **迁移弹窗手感实测**（双击 `dist\会话转MD.exe`）：跨 CLI 选项卡的目录选择/范围切换，备份选项卡的体积懒加载、干跑表格、进度条与取消，还原选项卡的 manifest 摘要与映射表。
+3. 上面两步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**代码已本地提交 `59c31c0`，exe 已就绪，尚未推送**——刻意压在真机续聊确认之后，避免把没验过的续聊功能先发出去。
 4. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
 5. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
 
@@ -180,3 +182,8 @@ build_exe.bat     PyInstaller 单文件打包脚本
 **本次做了什么：** v4 迁移功能全量实现。① 先在本机实测格式事实（Claude 记录必需字段与 slug 双编码、Codex 自带的「导入外部 agent 会话」产物骨架、四处路径的斜杠口径、`.claude` 759M / `.codex` 7.8G 的体积构成），照实测写而不猜。② 新增 `migrator.py` / `cli_registry.py` / `vault.py` 三个后端模块，`scanner._peek()` 顺带带出 `cwd`，`app.py` 加 9 条路由与两个新配置项。③ 前端加「🔀 迁移」弹窗（两选项卡，备份/还原再分内层），新增 6 组样式类，预览标题栏加「↪ 迁移」。④ README 补「迁移（🔀）」章节。
 **关键结论 / 产出：** 全部自测通过——往返自检 72/72（含 40 个空回复轮的会话，靠 `normalize_turns` 补占位解决被 `parse_codex` 吞轮的问题）；vault 端到端「全部通过」（智能排除生效、凭证开关两态正确、HOME 级 `.claude.json` 备份到 `claude/home/`、四处改写全中、4 个 `.bak` 留底、二次备份 8/8 全跳过、目标在源目录内被拦住）；Flask 路由逐条打通（46 个 CLI 目录、`.claude` 742 MB→399 MB、真实 .claude 仅会话干跑 12712 文件/387 MB、小目录备份+还原+改写 done 且 `cwd` 改到 `D:\demo2`）；两种来源 × 三个目标的迁移正向路径都 ok 且反读轮数一致；`node --check web/app.js` 通过、HTML id 与内联 handler 交叉核对无缺。目录体积从 13 秒/数字全错优化到 0.03 秒。
 **遗留问题：** 真机 `claude --resume` / `codex resume` 续聊需用户在场确认；迁移弹窗手感需双击 exe 实测；之后重打包发新 Release。
+
+### 2026-09-03 11:45
+**本次做了什么：** v4 收尾。① Flask test_client 复核 `/`、`/style.css`、`/app.js` 三个静态入口 200，且 `migMask`/`paneCross`/`paneVault`/`bkList`/`rsMap`/`migTabs` 六个新 id 都在渲染出的 HTML 里。② PyInstaller 重新打包（`--onefile --windowed --collect-all webview --hidden-import clr`），产出 `dist\会话转MD.exe` 20.6MB / 11:34。③ 启动冒烟：exe 起 Flask 在随机端口，WebView2 载入后 `/`、`/style.css`、`/app.js`、`/api/state`、`/api/sessions` 全 200，进程稳定存活，之后用 `taskkill` 清掉 3 个残留实例并用 `os.replace` 复核 exe 未被占用。④ 10 个文件本地提交 `59c31c0`（3 新增后端模块 + 7 修改，2521 插入），身份仍用 `git -c` 临时注入，未改全局配置。⑤ 提交前扫过新增文件里的路径/密钥字样，只剩两处拿本机项目路径当注释示例，无凭证内容。
+**关键结论 / 产出：** v4 代码与 exe 都已就绪并本地入库。踩到并沉淀了「Git Bash 查中文进程名」的编码坑——`tasklist | grep 中文` 因 CP936 vs UTF-8 永远不匹配，先前那句「没有正在运行的 exe」其实是误判（当时确有 3 个进程），改用 Python `decode("cp936")` 才准。**Release 刻意没发**：plan 的验证顺序把真机续聊排在打包之前，续聊是这版的主卖点，没在真 CLI 里验过就推公开仓库不合适。
+**遗留问题：** 真机 `claude --resume` / `codex resume` 续聊确认（需用户在场）→ 迁移弹窗手感实测（双击 exe）→ 两步通过后 `git push` + 发 Release v1.1.0（附件 `ChatToMD.exe`）。
