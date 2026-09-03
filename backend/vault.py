@@ -33,7 +33,9 @@ SCHEMA = 1
 MTIME_TOL = 2                 # 秒；同名同大小且 mtime 相差在此以内视为同一份
 TOP_N = 10                    # 干跑里列出的最大文件个数
 LONG_PATH = 240               # 超过这个长度就加 \\?\ 前缀
-DEFAULT_SUBDIR = "AI-CLI-Backup"   # 目标选到盘根时自动落到这个子目录
+DEFAULT_SUBDIR = "AI-CLI-Backup"   # 备份多个 CLI 时的快照目录前缀
+README_NAME = "备份说明.txt"       # 快照目录里的人类可读说明
+SNAP_RE = re.compile(r"_\d{8}-\d{4,6}$")   # 快照目录名的尾巴：_20260903-1930
 
 
 def is_drive_root(p):
@@ -52,17 +54,39 @@ def is_drive_root(p):
     return q == os.sep
 
 
-def normalize_dest(dest):
-    """把备份目标规整成一个专用目录，返回 (最终目录, 提示或 '')。
+def snapshot_name(keys=None):
+    """快照目录名：只备一个 CLI 就用它的 key，多个用统一前缀，后面一律跟导出时间。
 
-    盘根一律下钻一层：备份要能整目录搬走/打包/识别，摊在盘根上这三件都做不了。
+    用户反馈过「不应该是单独的一个 claude」—— 一个叫 `claude` 的裸目录既看不出是备份、
+    也看不出哪天导的。带上时间戳后，manifest 与各 CLI 子目录都收在这个目录里面。
+    """
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+    base = keys[0] if keys and len(keys) == 1 and keys[0] else DEFAULT_SUBDIR
+    return "%s_%s" % (re.sub(r"[^\w.-]", "_", str(base)), stamp)
+
+
+def normalize_dest(dest, keys=None):
+    """把备份目标规整成一个独立快照目录，返回 (最终目录, 提示或 '')。
+
+    按顺序判三条：
+    ① 选中的目录里已经有 manifest.json → 那就是一份旧备份，原地增量更新它；
+    ② 目录名本身就是快照名（`xxx_20260903-1930`）→ 直接用（干跑与真跑两次调用要落到同一处）；
+    ③ 其余情况（含盘根）→ 在它下面新建一个带日期的快照目录。
+    以前只对盘根下钻，选普通目录时 manifest.json 会和 `claude\\` 一起摊在用户自己的目录里，
+    打包解压后 json 就显得在文件夹外边，还原端跟着找不着。
     """
     if not dest:
         return dest, ""
-    if is_drive_root(dest):
-        final = os.path.join(os.path.abspath(dest), DEFAULT_SUBDIR)
-        return final, "目标是盘根目录，已自动改用子目录 %s（备份需要独立目录才能打包和识别）" % final
-    return os.path.abspath(dest), ""
+    d = os.path.abspath(dest)
+    if os.path.isfile(long_path(os.path.join(d, MANIFEST))):
+        return d, "所选目录里已有 %s，将增量更新这份备份（同名同大小同修改时间的文件跳过）。" % MANIFEST
+    if SNAP_RE.search(os.path.basename(d.rstrip("\\/")) or ""):
+        return d, ""
+    final = os.path.join(d, snapshot_name(keys))
+    tail = "（盘根不能直接当备份目录）" if is_drive_root(d) else ""
+    return final, ("备份落在 %s%s：%s、%s 和各 CLI 子目录都在这一个目录里，整目录或它的 zip 可直接搬走。"
+                   "想增量更新上次那份，把目标直接选到那份备份（有 %s 的那一层）。"
+                   % (final, tail, MANIFEST, README_NAME, MANIFEST))
 
 
 def now_stamp():
@@ -187,7 +211,7 @@ def _walk(top_dir, rel0, junk, secrets, include_secrets):
 # ---------------- 干跑 ----------------
 def plan_backup(entries, dest, home=None, custom=None):
     """entries: [{key, scope}]。返回每个 CLI 的文件数/字节数 + 最大的几个文件 + 已存在可跳过数。"""
-    dest, dest_note = normalize_dest(dest)
+    dest, dest_note = normalize_dest(dest, [en.get("key") for en in entries])
     out = {"action": "backup", "dest": dest, "dest_note": dest_note, "entries": [],
            "files": 0, "bytes": 0,
            "skip_files": 0, "skip_bytes": 0, "top": [], "secrets": []}
@@ -294,7 +318,7 @@ def start_backup(entries, dest, home=None, custom=None, make_zip=False):
     """起一个后台备份任务，立刻返回 job（前端拿 id 轮询）。"""
     if not dest:
         raise ValueError("请先选择备份目录")
-    dest, _note = normalize_dest(dest)
+    dest, _note = normalize_dest(dest, [en.get("key") for en in entries])
     rules = [r for r in (reg.find(e["key"], home, custom) for e in entries) if r]
     if not rules:
         raise ValueError("没有可备份的目录")
@@ -344,6 +368,7 @@ def _run_backup(job, entries, dest, home, custom, make_zip):
                 "include_secrets": inc})
         with open(os.path.join(dest, MANIFEST), "w", encoding="utf-8") as f:
             json.dump(man, f, ensure_ascii=False, indent=2)
+        _write_readme(dest, man)
         job["result"] = {"dest": dest, "manifest": os.path.join(dest, MANIFEST)}
         if make_zip and not job["cancel"]:
             job["current"] = "打包 zip…"
@@ -360,76 +385,176 @@ def _run_backup(job, entries, dest, home, custom, make_zip):
         job["current"] = ""
 
 
-def _make_zip(dest, man):
-    """把备份目录打成 zip，放在备份目录的**同级**。
+def _write_readme(dest, man):
+    """快照目录里放一份人类可读说明：解压后不用猜这是什么、manifest 该在哪、怎么还原。"""
+    first = ((man.get("entries") or [{}])[0].get("dest")
+             or (man.get("entries") or [{}])[0].get("key") or "claude")
+    lines = ["AI CLI 备份快照（由「会话转 MD」生成，勿手动挪动里面的文件）", "",
+             "备份时间：%s" % man.get("created", ""),
+             "来源机器：%s（用户 %s）" % (man.get("host", ""), man.get("user", "")),
+             "来源 HOME：%s" % man.get("home", ""),
+             "系统：%s" % man.get("os", ""),
+             "含凭证文件：%s" % ("是 —— 这份备份等于账号，别放公开网盘"
+                            if man.get("includes_secrets") else "否"),
+             "", "包含的 CLI："]
+    for en in man.get("entries") or []:
+        lines.append("  - %s（%s）：%s → 本目录下的 %s\\，%d 个文件 / %s"
+                     % (en.get("label") or en.get("key"), en.get("key"), en.get("source"),
+                        en.get("dest") or en.get("key"), en.get("files", 0),
+                        reg.fmt_size(en.get("bytes", 0))))
+    lines += ["", "目录结构：",
+              "  %s        还原用的清单，别删、别单独挪走" % MANIFEST,
+              "  %s\\root\\…      对应源目录 ~/.%s 下的文件" % (first, first),
+              "  %s\\home\\…      对应 HOME 里的配套文件（如 .claude.json）" % first,
+              "", "怎么还原：",
+              "  1. 把这个目录（或它的 zip）整个拷到新电脑，zip 解压出来就是这个目录；",
+              "  2. 打开「会话转 MD」→ 🔀 迁移 → 备份 / 还原 → 还原；",
+              "  3. 「备份来源」选**本目录**（%s 所在的这一层，不是里面的 %s\\ 子目录；"
+              "选错层会自动往上/往下找一层）；" % (MANIFEST, first),
+              "  4. 先点「读取并预览」核对清单和「还原到」，再点「开始还原」；",
+              "  5. 还原前请先关掉对应 CLI，还原只增不删，覆盖前会先留 .bak-时间戳。"]
+    with open(long_path(os.path.join(dest, README_NAME)), "w", encoding="utf-8-sig") as f:
+        f.write("\n".join(lines) + "\n")
 
-    只收 manifest + manifest 里记下的各 CLI 子目录，不 `os.walk(dest)`：
+
+def _make_zip(dest, man):
+    """把备份目录打成 zip，放在备份目录的**同级**，包内统一套一层与 zip 同名的目录。
+
+    只收 manifest + 说明 + manifest 里记下的各 CLI 子目录，不 `os.walk(dest)`：
     ① 目标目录里可能还有别人的文件，不该一起打包；
     ② zip 自己就在旁边，走整棵树会把不断变大的 zip 也收进去；
     ③ 早先 `dest.rstrip('\\\\/')` 遇到 `E:\\` 会退化成 `E:` —— 这是「当前盘当前目录」的
        相对写法，zip 被写到进程 cwd 里，同时 walk 整个 E 盘撞上 pagefile.sys 直接失败。
+    包内套一层是用户实测反馈的：以前 manifest.json 和 `claude/` 平铺在包根，解压到现成目录里
+    json 就散在文件夹外边，还原时选中 `claude` 目录直接报「没有 manifest.json」。
     """
     root = os.path.abspath(dest)
     parent, base = os.path.split(root.rstrip("\\/"))
-    zp = os.path.join(parent or root, "%s_%s.zip" % (base or "backup", now_stamp()))
-    items = [MANIFEST] + [en.get("dest") or en["key"] for en in man.get("entries") or []]
+    base = base or "backup"
+    stem = base if SNAP_RE.search(base) else "%s_%s" % (base, now_stamp())
+    zp = os.path.join(parent or root, stem + ".zip")
+    items = [MANIFEST, README_NAME] + [en.get("dest") or en["key"]
+                                       for en in man.get("entries") or []]
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as z:
         for it in items:
             p = os.path.join(root, it)
             if os.path.isfile(long_path(p)):
-                z.write(long_path(p), it)
+                z.write(long_path(p), "%s/%s" % (stem, it))
                 continue
             for dirpath, _dirs, files in os.walk(long_path(p)):
                 for fn in files:
                     fp = os.path.join(dirpath, fn)
-                    z.write(long_path(fp), os.path.relpath(fp, root))
+                    rel = os.path.relpath(fp, root).replace("\\", "/")
+                    z.write(long_path(fp), "%s/%s" % (stem, rel))
     return zp
 
 
 # ---------------- 还原 ----------------
-def resolve_backup_dir(d):
-    """选到备份的**上一层**（比如盘根，而备份在 E:\\AI-CLI-Backup\\）时自动下钻一层。
+def _man_at(d):
+    """读 d/manifest.json；读不出来或不像本工具的清单就当没有（别把随便一个同名文件当备份）。"""
+    p = os.path.join(d, MANIFEST)
+    if not os.path.isfile(long_path(p)):
+        return None
+    try:
+        with open(long_path(p), "r", encoding="utf-8") as f:
+            man = json.load(f)
+    except Exception:
+        return None
+    return man if isinstance(man, dict) and isinstance(man.get("entries"), list) else None
 
-    备份现在固定落在专用子目录里，用户很容易只选到它的父目录，直接报「不是备份目录」太生硬。
-    只在恰好有一个子目录带 manifest 时才下钻，避免猜错。
-    """
-    if not d or os.path.isfile(os.path.join(d, MANIFEST)):
-        return d
+
+def _entry_dirs_here(root, man):
+    """manifest 记的 CLI 子目录，有几个真的在 root 底下。"""
+    return sum(1 for en in man.get("entries") or []
+               if os.path.isdir(long_path(os.path.join(root, en.get("dest")
+                                                       or en.get("key") or ""))))
+
+
+def _sub_manifests(d, limit=6):
+    """d 的直接子目录里带 manifest 的那些（最多找 limit 个，够判断唯一性 + 报错时列名字）。"""
     hits = []
     try:
         for name in sorted(os.listdir(long_path(d))):
             sub = os.path.join(d, name)
-            if os.path.isdir(long_path(sub)) and os.path.isfile(os.path.join(sub, MANIFEST)):
+            if os.path.isdir(long_path(sub)) and _man_at(sub):
                 hits.append(sub)
-                if len(hits) > 1:
+                if len(hits) >= limit:
                     break
     except OSError:
+        pass
+    return hits
+
+
+def locate_backup(d):
+    """把用户随手选的目录归位，返回 (内容根目录, manifest)。内容根 = 各 CLI 子目录所在那层。
+
+    实测用户会选到四种位置，全都要认下来，不然只能干巴巴回一句「不是本工具生成的备份」：
+    ① 正好选中备份目录 → 原样用；
+    ② 选到上一层（盘根，或解压出来的外层目录）→ 下钻唯一那份备份；
+    ③ 选到里面的 CLI 子目录（`E:\\claude`）→ 上浮一层，父目录带 manifest 就用父目录；
+    ④ manifest 被手动挪进了 CLI 子目录 → manifest 用找到的这份，内容根取父目录。
+    ③④ 是用户实测踩到的：早先只会往下钻，选中 `E:\\claude` 就报「没有 manifest.json」；
+    手动把 json 挪进去之后条目目录又被算成 `E:\\claude\\claude`，预览出来 0 个文件 0 B。
+    返回值把 manifest 一起带出来，就是因为 ④ 里「清单在哪」和「文件在哪」不在同一层，
+    只返回目录的话后面再按目录去找清单，撞上同层有两份备份（`E:\\claude` 和
+    `E:\\AI-CLI-Backup`）就会挑错人。
+    """
+    if not d:
+        raise ValueError("请先选择备份目录或 zip 包")
+    d = os.path.abspath(d)
+    man = _man_at(d)
+    if man and _entry_dirs_here(d, man):
+        return d, man                                     # ①
+    subs = _sub_manifests(d)
+    only = subs[0] if len(subs) == 1 else None
+    oman = _man_at(only) if only else None
+    if oman and _entry_dirs_here(only, oman):
+        return only, oman                                 # ②
+    parent = os.path.dirname(d.rstrip("\\/"))
+    up = parent if parent and parent != d else ""
+    if man:
+        if up and _entry_dirs_here(up, man):
+            return up, man                                # ④
+        return d, man          # 层级对不上，交给 plan_restore 把期望目录摆给用户看
+    if up:
+        pman = _man_at(up)
+        if pman and _entry_dirs_here(up, pman):
+            return up, pman                               # ③
+    if only:
+        return only, oman      # 唯一那份备份但条目目录不全，同样走提示而不是猜
+    if len(subs) > 1:
+        raise ValueError("%s 下面有 %d 份备份（%s），请直接选中要还原的那一份。"
+                         % (d, len(subs), "、".join(os.path.basename(s) for s in subs)))
+    raise ValueError("这个目录里没有 %s，或它不是本工具生成的备份：%s\n"
+                     "请选到 %s 和各 CLI 子目录同在的那一层（选它们的上一层、或里面的某个 CLI "
+                     "子目录也能自动认出来）；zip 请先解压，再选解出来的那个目录。"
+                     % (MANIFEST, d, MANIFEST))
+
+
+def resolve_backup_dir(d):
+    """只要内容根目录；认不出来就原样返回，让调用方自己报错。"""
+    try:
+        return locate_backup(d)[0]
+    except ValueError:
         return d
-    return hits[0] if len(hits) == 1 else d
 
 
 def read_manifest(backup_dir):
-    p = os.path.join(backup_dir, MANIFEST)
-    if not os.path.isfile(p):
-        raise ValueError("这个目录里没有 %s，不是本工具生成的备份" % MANIFEST)
-    with open(p, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return locate_backup(backup_dir)[1]
 
 
 def unzip_backup(zip_path, workdir=None):
-    """还原端接受 zip：先解到临时目录，再走同一条还原路径。"""
+    """还原端接受 zip：先解到临时目录，再走同一条还原路径。
+
+    包内现在统一套一层与包同名的目录，解出来是 `<workdir>/<快照名>/manifest.json`，
+    交给 resolve_backup_dir 下钻一层即可；老版本平铺在包根的 zip 也照样认。
+    """
     workdir = workdir or os.path.join(os.path.dirname(zip_path),
                                       "_unzip_" + now_stamp())
     os.makedirs(long_path(workdir), exist_ok=True)
     with zipfile.ZipFile(zip_path) as z:
-        z.extractall(workdir)
-    if os.path.isfile(os.path.join(workdir, MANIFEST)):
-        return workdir
-    for name in os.listdir(workdir):      # 有的 zip 多套一层目录
-        d = os.path.join(workdir, name)
-        if os.path.isdir(d) and os.path.isfile(os.path.join(d, MANIFEST)):
-            return d
-    return workdir
+        z.extractall(long_path(workdir))
+    return resolve_backup_dir(workdir)
 
 
 def restore_targets(backup_dir, home=None, overrides=None):
@@ -438,8 +563,7 @@ def restore_targets(backup_dir, home=None, overrides=None):
     默认把 manifest 里记的旧 HOME 换成当前 HOME：源 C:\\Users\\A\\.claude 记在
     manifest 里，新机 HOME 变了也能落到新机的 ~/.claude。
     """
-    backup_dir = resolve_backup_dir(backup_dir)
-    man = read_manifest(backup_dir)
+    backup_dir, man = locate_backup(backup_dir)
     home = home or reg.HOME
     old_home = man.get("home") or home
     out = []
@@ -455,7 +579,8 @@ def restore_targets(backup_dir, home=None, overrides=None):
                     "backup_source": src_root, "root_target": os.path.normpath(tgt),
                     "home_target": home,
                     "dir": os.path.join(backup_dir, en.get("dest") or en["key"])})
-    return {"manifest": man, "old_home": old_home, "home": home, "entries": out}
+    return {"manifest": man, "backup_dir": backup_dir, "old_home": old_home,
+            "home": home, "entries": out}
 
 
 def _iter_backup_files(entry_dir):
@@ -477,11 +602,11 @@ def _dest_of(item, bucket, rel):
 def plan_restore(backup_dir, home=None, overrides=None, keys=None,
                  conflict=CONFLICT_SKIP):
     """还原干跑：每条目录会写多少文件、多少字节，多少个目标已存在（会跳过或备份覆盖）。"""
-    backup_dir = resolve_backup_dir(backup_dir)
     info = restore_targets(backup_dir, home, overrides)
+    backup_dir = info["backup_dir"]        # 归位只做一次，别来回跳（会算成 <dir>\<key>\<key>）
     out = {"action": "restore", "backup_dir": backup_dir, "old_home": info["old_home"],
            "home": info["home"], "conflict": conflict, "entries": [],
-           "files": 0, "bytes": 0, "exists": 0, "top": []}
+           "manifest": info["manifest"], "files": 0, "bytes": 0, "exists": 0, "top": []}
     for item in info["entries"]:
         if keys and item["key"] not in keys:
             continue
@@ -501,21 +626,42 @@ def plan_restore(backup_dir, home=None, overrides=None, keys=None,
                 del top[TOP_N:]
         row = dict(item)
         row.update({"files": n, "bytes": b, "size": reg.fmt_size(b), "exists": ex,
+                    "missing": not os.path.isdir(long_path(item["dir"])),
                     "top": [{"size": reg.fmt_size(s), "path": p} for s, p in top]})
         out["entries"].append(row)
         out["files"] += n
         out["bytes"] += b
         out["exists"] += ex
     out["size"] = reg.fmt_size(out["bytes"])
+    miss = [e["dir"] for e in out["entries"] if e["missing"]]
+    if miss:
+        out["missing"] = miss
+    if not out["files"]:
+        # 一份 0 文件的「有效备份」和一份找错层的备份，在界面上长得一模一样（都是 0 个 / 0 B），
+        # 用户实测就卡在这儿。直接把期望的目录摆出来，别让人猜是不是「全被跳过了」。
+        out["warn"] = ("没找到可还原的文件：本工具期望在 %s 下面看到 root\\ 或 home\\ 子目录。"
+                       "常见原因是 %s 和各 CLI 子目录没放在同一层（比如 json 被单独挪进了子目录），"
+                       "把它放回 %s 再试，或直接选它们共同的上一层目录。"
+                       % ("、".join(miss) if miss else backup_dir, MANIFEST, backup_dir))
     return out
 
 
 def start_restore(backup_dir, home=None, overrides=None, keys=None,
                   conflict=CONFLICT_SKIP, rewrite=None):
     """起后台还原任务。rewrite: {'enabled':True,'mapping':{旧路径:新路径}} 才做路径改写。"""
-    backup_dir = resolve_backup_dir(backup_dir)
-    read_manifest(backup_dir)             # 先校验是本工具的备份
+    resolved, man = locate_backup(backup_dir)      # 先校验是本工具的备份
+    if not _entry_dirs_here(resolved, man):
+        # 层级不对时不能默默跑一个 0 文件的「成功」还原，那比报错更难查。
+        raise ValueError("%s 里找不到 manifest 记的任何 CLI 子目录（%s），层级不对。"
+                         "请选到 %s 和这些子目录同在的那一层。"
+                         % (resolved,
+                            "、".join((en.get("dest") or en.get("key") or "?")
+                                      for en in man.get("entries") or []) or "无",
+                            MANIFEST))
     job = new_job("restore")
+    job["result"] = {"backup_dir": resolved}
+    # 传给后台线程的是**用户原样选的路径**：归位只能对原始输入做一次。拿归位后的路径再跑一遍
+    # locate_backup，遇到「manifest 在子目录、同层还有另一份备份」就会因为同层有两份而报歧义。
     t = threading.Thread(target=_run_restore, daemon=True,
                          args=(job, backup_dir, home, overrides, keys, conflict, rewrite))
     t.start()
@@ -549,7 +695,7 @@ def _run_restore(job, backup_dir, home, overrides, keys, conflict, rewrite):
                 job["done_bytes"] += sz
             if job["cancel"]:
                 break
-        job["result"] = {"backup_dir": backup_dir, "written": len(written),
+        job["result"] = {"backup_dir": plan["backup_dir"], "written": len(written),
                          "targets": [e["root_target"] for e in plan["entries"]]}
         if rewrite and rewrite.get("enabled") and not job["cancel"]:
             job["current"] = "改写会话里的项目路径…"

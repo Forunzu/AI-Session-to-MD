@@ -149,6 +149,9 @@
               <label class="chk"><input type="checkbox" id="bkZip"> 完成后打包 zip</label>
             </div>
           </div>
+          <p class="hint" style="margin-left:108px">每次备份在所选目录下新建一个带日期的快照目录
+            （如 <code>claude_20260903-1930\</code>），<code>manifest.json</code>、<code>备份说明.txt</code>
+            和各 CLI 子目录都在它里面，整目录或 zip 可直接搬走。目标直接选中一份已有备份则增量更新那一份。</p>
           <div class="fld">
             <label>批量设为</label>
             <div class="fval">
@@ -185,6 +188,8 @@
               <button class="btn" onclick="rsPlan()">读取并预览</button>
             </div>
           </div>
+          <p class="hint" style="margin-left:108px">选 <code>manifest.json</code> 所在的那一层最稳；
+            选到它的上一层、或里面的某个 CLI 子目录也会自动认出来。zip 直接选也行，会先解到临时目录。</p>
           <div class="fld">
             <label>还原到 HOME</label>
             <div class="fval">

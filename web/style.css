@@ -164,4 +164,4 @@ body.no-outline .outline { display: none; }
 .res-row .t { font-weight: 600; margin-bottom: 4px; }
 .res-row .p { font-size: 11px; color: var(--text-dim); font-family: Consolas, monospace; word-break: break-all; margin-bottom: 6px; }
 .res-row .cmd { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 6px; padding: 6px 9px; }
-.res-row .cmd code { flex: 1; min-width: 0; font-family: Consolas, monospace; font-size: 11px; word-break: break-all; }
+.res-row .cmd code { flex: 1; min-width: 0; font-family: Consolas, monospace; font-size: 11px; word-break: break-all; white-space: pre-wrap; }

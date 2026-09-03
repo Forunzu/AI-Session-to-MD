@@ -421,8 +421,8 @@ function arm(btn, label) {
 // ---------- 跨 CLI 续聊 ----------
 const MIG_NOTE_TAIL = "工具活动折叠成 <code>〔工具 …〕</code> 文本，不生成真实调用块（缺配对的结果块会让目标 CLI 下一轮直接报错）。只新建文件，不改动任何已有会话。";
 const MIG_NOTES = {
-  claude: "写入 <code>~/.claude/projects/&lt;项目slug&gt;/</code> 下一个新会话文件，之后 <code>cd &lt;项目目录&gt; && claude --resume &lt;会话 id&gt;</code> 接着聊。",
-  codex: "写入 <code>~/.codex/sessions/年/月/日/rollout-….jsonl</code>，之后 <code>codex resume &lt;会话 id&gt;</code> 载入 —— 收的是 id 不是路径，传路径会报 <code>No saved session found with ID</code>。",
+  claude: "写入 <code>~/.claude/projects/&lt;项目slug&gt;/</code> 下一个新会话文件；之后先 <code>cd &lt;项目目录&gt;</code>、再 <code>claude --resume &lt;会话 id&gt;</code> 接着聊（claude 没有指定目录的参数，得真的先 cd）。",
+  codex: "写入 <code>~/.codex/sessions/年/月/日/rollout-….jsonl</code>；之后 <code>codex -C \"&lt;项目目录&gt;\" resume &lt;会话 id&gt;</code> 载入 —— 收的是 id 不是路径，传路径会报 <code>No saved session found with ID</code>。",
   handoff: "生成 <code>handoff_…</code> 目录（会话记录.md + 交接提示词.txt）到顶部设的输出目录，任何 CLI 都能用。"
 };
 
@@ -514,6 +514,7 @@ function renderMigResult(res) {
         <span class="mode-tag">${r.target === "handoff" ? "交接包" : (r.target === "codex" ? "Codex" : "Claude")}${r.turns ? " · " + r.turns + "/" + r.total_turns + " 轮" : ""}</span></div>
         <div class="p">${esc(r.path)}</div>
         <div class="cmd"><code>${esc(r.resume || "")}</code></div>
+        ${(r.resume || "").indexOf("\n") >= 0 ? `<div class="p" style="margin:6px 0 0">↑ 两行请分别回车执行（Windows PowerShell 5.1 不认 <code>&&</code> 连接）。</div>` : ""}
         ${r.resume_alt ? `<div class="p" style="margin:6px 0 0">备选：${esc(r.resume_alt)}</div>` : ""}`;
       const cmd = row.querySelector(".cmd");
       const b1 = document.createElement("button");
@@ -765,7 +766,8 @@ async function rsPlan(quiet) {
   if (/\.zip$/i.test(src)) {
     RS_PLAN = null;
     $("rsDry").innerHTML = `<p class="hint" style="margin-left:0">选的是 zip 包，没法先干跑清点。
-      点「开始还原」会自动解到临时目录再还原；想先看清单就手动解压后选那个目录。</p>`;
+      点「开始还原」会自动解到临时目录再还原；想先看清单就手动解压，再选解出来的那个目录
+      （包里套了一层与包同名的目录，manifest.json 就在它里面）。</p>`;
     return null;
   }
   $("rsDry").innerHTML = '<p class="dry-sum">正在读取 manifest 并统计…</p>';
@@ -775,7 +777,8 @@ async function rsPlan(quiet) {
       conflict: segVal("rsConflict") });
     RS_PLAN = p;
     renderRsDry(p);
-    if (!quiet) toast(`可还原 ${p.files} 个文件 / ${p.size}`);
+    if (p.backup_dir && p.backup_dir !== src) $("rsSrc").value = p.backup_dir;
+    if (!quiet) toast(p.files ? `可还原 ${p.files} 个文件 / ${p.size}` : "没找到可还原的文件，看清单里的提示");
     return p;
   } catch (e) {
     RS_PLAN = null;
@@ -790,10 +793,12 @@ function renderRsDry(p) {
     <b>${esc(m.host || "—")}</b> 的 <code>${esc(p.old_home)}</code>${m.includes_secrets ? "（含凭证）" : ""}；
     共 <b>${p.files}</b> 个文件 / <b>${p.size}</b>，其中 ${p.exists} 个目标端已存在，按当前策略
     <b>${segVal("rsConflict") === "skip" ? "跳过" : "覆盖（先存 .bak）"}</b>。</p>`;
+  h += `<p class="hint" style="margin-left:0">读的是 <code>${esc(p.backup_dir || "")}</code></p>`;
+  if (p.warn) h += `<p class="hint warn" style="margin-left:0">${esc(p.warn)}</p>`;
   h += `<table class="dry-table"><tr><th>目录</th><th class="num">文件</th><th class="num">体积</th>
     <th>还原到（可改）</th></tr>`;
   (p.entries || []).forEach(e => {
-    h += `<tr><td title="${esc(e.backup_source || "")}">${esc(e.label)}</td>
+    h += `<tr><td title="${esc(e.backup_source || "")}">${esc(e.label)}${e.missing ? " ⚠" : ""}</td>
       <td class="num">${e.files}</td><td class="num">${e.size}</td>
       <td><input data-key="${esc(e.key)}" value="${esc(e.root_target)}"></td></tr>`;
   });
@@ -853,6 +858,11 @@ async function rsStart() {
   const isZip = /\.zip$/i.test(src);
   const p = isZip ? null : await rsPlan(true);
   if (!isZip && !p) { btn._armed = false; btn.textContent = btn._orig || "开始还原"; return; }
+  if (p && !p.files) {
+    btn._armed = false; btn.textContent = btn._orig || "开始还原";
+    toast("这个目录里没找到可还原的文件，按上面清单里的提示换个目录再试");
+    return;
+  }
   const rw = $("rsRw").checked ? { enabled: true, mapping: rwMapping() } : null;
   if (rw && !Object.keys(rw.mapping).length) { toast("勾了路径改写但没填映射，请填一条或取消勾选"); return; }
   const label = isZip ? "确认解包并还原（再点一次）"

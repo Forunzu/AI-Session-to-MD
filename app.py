@@ -243,7 +243,8 @@ def api_vault_restore():
                                  d.get("keys") or None,
                                  d.get("conflict") or vault.CONFLICT_SKIP,
                                  d.get("rewrite") or None)
-        return jsonify({"job_id": job["id"], "backup_dir": src})
+        return jsonify({"job_id": job["id"],
+                        "backup_dir": (job.get("result") or {}).get("backup_dir") or src})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
