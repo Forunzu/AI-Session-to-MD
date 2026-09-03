@@ -40,7 +40,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ## ✅ 当前进度
 - 已完成：v1（解析/扫描/转换 + GUI + 单文件 exe）→ v2（指令目录 + MD 自动标题 + 单条导出）→ v3（双日期显示 + 手动排序 + 目录高亮 CSS 修复 + 开源发布）→ **v4（迁移功能：跨 CLI 续聊 + 换机备份还原，后端 3 个新模块 + 9 条新路由 + 迁移弹窗，已自测通过）** → **v4.1（真机实测反馈修复：续聊命令改发会话 id、备份目标选到盘根自动改用 `AI-CLI-Backup` 子目录、zip 落点与失败隔离、还原目录自动下钻）**。
-- 进行中：v4.1 收尾——`migrator.py` / `vault.py` / `web/app.js` / `README.md` 已改完并过沙箱 E2E；剩「重打包 exe → 真机 `codex resume <id>` 载入确认 → push + 发 Release v1.1.0」。`codex exec resume` 实测被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），暂以静态核对代替：rollout 文件名 UUID == `session_meta.payload.session_id`，id 形态有合法目标。
+- 进行中：v4.1 收尾——`migrator.py` / `vault.py` / `web/app.js` / `README.md` 已改完并过沙箱 E2E，提交 `20c15d3`；exe 已按修复后的代码重打包（`dist\会话转MD.exe` 20.6MB / 09-03 13:53，冒烟「全部通过」，包内 app.js 与 vault 都已带修复）。剩「真机 `codex resume <id>` 载入确认 → push + 发 Release v1.1.0」。`codex exec resume` 实测被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），暂以静态核对代替：rollout 文件名 UUID == `session_meta.payload.session_id`，id 形态有合法目标。
 - 待启动：清理上次失败备份的残留（`E:\manifest.json` + `E:\claude\` 402.1 MB + `dist\_20260903-125458.zip` 75.1 MB，待用户拍板「移进 AI-CLI-Backup」或「删掉」）；按反馈调整；可选 WebView2 固定版打包。
 
 ## 🌐 开源信息
@@ -137,7 +137,8 @@ build_exe.bat     PyInstaller 单文件打包脚本
 - [v4/沙箱扫不到会话] 测试把 `CLAUDE_CONFIG_DIR`/`CODEX_HOME` 指到空沙箱后，`scanner.default_sources()` 也跟着指过去，一个会话都扫不到。→ 配置里显式写真实来源目录用于**读**，环境变量只管**写**，两边分开。
 - [v4/原生弹窗] 大动作二次确认没用 `window.confirm`（pywebview 里不保证可靠）→ 同一个按钮点两次：第一次出干跑清单并把按钮文案换成「确认…（再点一次）」，20 秒后自动复位。
 - [打包/查进程] **Git Bash 里 `tasklist | grep "会话转MD"` 永远匹配不到**：tasklist 输出是 CP936，grep 的 pattern 是 UTF-8，中文名对不上，于是报「没有正在运行的 exe」——实际有 3 个进程在跑（本次就误判了一次，只是恰好打包在启动之前所以没撞上 `WinError 5`）。另外 `tasklist /fo csv` 会被 MSYS 把 `/fo` 转成 `C:/Program Files/Git/fo` 而报「无效参数」，`iconv -f CP936` 遇到非法字节直接吐空。→ 统一改用 Python：`subprocess.run(["tasklist"], capture_output=True).stdout.decode("cp936","replace")`，收尾也用 Python 调 `taskkill /F /IM`。
-- [打包/占用复核] 判断 exe 是否被占用别只看进程表，直接试 `os.replace(p, p+'.t')` 再改回来：能重命名就说明没锁，可以打包。比数进程可靠。
+- [打包/占用复核] **旧结论（已推翻）**：以为 `os.replace(p, p+'.t')` 能重命名就说明 exe 没被锁、可以打包。**已验证新结论**：v4.1 重打包时 2 个实例在跑，重命名测试报「未被占用」，PyInstaller 照样在 `os.remove(self.name)` 上抛 `PermissionError [WinError 5]`——运行中的 onefile exe 允许改名但**不允许删除**，而 PyInstaller 走的是删除。→ 占用判定改用 `os.remove(p)`（能删就是真没锁，删掉正好要覆盖），或者干脆先无条件 `taskkill /F /IM 会话转MD.exe` 再打包。
+- [打包/冒烟找端口] onefile 的 bootloader 会**再起一个子进程**，真正 listen 的是子进程，按 `Popen` 拿到的父 PID 去 `netstat -ano` 匹配永远抓不到端口（第一次冒烟就这么超时了）。→ 按镜像名 `tasklist` 取全部同名 PID，逐个在 netstat 里找 LISTENING。收尾也用 `taskkill /F /IM` 而不是 `/PID`。
 - [v4.1/codex resume 参数] `codex resume` 收的是**会话 id（UUID）或线程名，不是文件路径**——传 rollout 路径实测直接报 `No saved session found with ID <路径>`（codex-cli 0.145.0，`codex resume --help` 写的是 `[SESSION_ID] [PROMPT]`）。另外不带 id 的 picker **默认按当前目录过滤**，所以命令要先 `cd` 到目标 cwd，或者用 `codex resume --all` 从全量列表挑。→ 界面与 README 一律给 `cd "<cwd>" && codex resume <sessionId>`，并额外给一条 `--all` 备选。同理 Claude 侧给 `claude --resume <sessionId>`。
 - [v4.1/盘根被削成盘符相对路径] `"E:\\".rstrip("\\/")` → `"E:"`，这在 Windows 上是**盘符相对路径**，指向该盘在当前进程 CWD 的位置，不是盘根。旧 `_make_zip` 用 `dest.rstrip() + "_" + 时间戳 + ".zip"` 拼名，于是 zip 落进了 exe 的工作目录（`dist\_20260903-125458.zip`）而不是 E 盘。→ 用 `os.path.split(root.rstrip("\\/"))` 拆出父目录与 base，zip 明确放在备份目录**同级**；同时 `normalize_dest()` 把盘根整体挡在前面。
 - [v4.1/os.walk 盘根] 打包时 `os.walk(dest)`，dest 是 `E:\` 就等于扫整个盘，撞上 `E:\pagefile.sys` 直接 `[Errno 13] Permission denied`，整个 job 被判 `error`——而 12724 个文件其实已经全部复制成功。→ ① 备份目标是盘根时自动改用 `E:\AI-CLI-Backup\` 子目录（备份本来就要求独立目录：manifest + 各 CLI 子目录是平铺的）；② zip 只收 `manifest.json` + manifest `entries` 里登记的子目录，不再遍历整个 dest；③ 打包单独 try，失败只记一条 error，不抹掉已复制好的备份。
@@ -175,14 +176,13 @@ build_exe.bat     PyInstaller 单文件打包脚本
 ---
 
 ## 🔜 下一步（优先级排序）
-1. **重打包 `dist\会话转MD.exe`**：现有 exe（20.6MB / 11:34）早于 v4.1 三处修复，用户手上那份仍会给出错误的 codex 命令、备份仍会在盘根翻车。打包前先用 Python `subprocess.run(["tasklist"]).stdout.decode("cp936")` 查进程 + `os.replace` 试锁（**不要**在 Git Bash 里 `tasklist | grep 中文`）。
-2. **真机 `codex resume <id>` 载入确认**（需用户在场）：`cd "E:\在办项目\脚本管理软件开发" && codex resume 01a06598-8ee3-7869-b043-c5e355f9557a`，确认能列出并载入。本次 `codex exec resume` 被本机权限分类器连挡 3 次，只做了静态核对（文件名 UUID == `payload.session_id`）。Claude 侧同理跑一次 `claude --resume <id>`。
-3. **残留清理**（等用户拍板）：`E:\manifest.json` + `E:\claude\`（12724 文件 / 402.1 MB，内容完整可用）建议整体移进 `E:\AI-CLI-Backup\`，移完就是一份规范备份、下次备份会全跳过；`dist\_20260903-125458.zip`（75.1 MB，内容是 E 盘根目录的杂物）直接删。
-4. **重跑一次盘根备份**验证修复：目标填 `E:\`，应看到自动改成 `E:\AI-CLI-Backup\`、干跑清单写明落盘位置、job 收在 `done` 而不是 `error`，zip 落在 `E:\AI-CLI-Backup_<时间戳>.zip`。
-5. **迁移弹窗手感实测**（双击新 exe）：跨 CLI 的目录选择/范围切换，备份的体积懒加载、干跑表格、进度条与取消，还原的 manifest 摘要与映射表。
-6. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 3 个未推送提交**（`59c31c0` v4 + `46abec7` context + 本次 v4.1），刻意压在真机确认之后。
-7. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
-8. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
+1. **真机 `codex resume <id>` 载入确认**（需用户在场）：`cd "E:\在办项目\脚本管理软件开发" && codex resume 01a06598-8ee3-7869-b043-c5e355f9557a`，确认能列出并载入接着聊。本次 `codex exec resume` 被本机权限分类器连挡 3 次，只做了静态核对（rollout 文件名 UUID == `payload.session_id`）。Claude 侧同理跑一次 `claude --resume <id>`。
+2. **残留清理**（等用户拍板）：`E:\manifest.json` + `E:\claude\`（12724 文件 / 402.1 MB，**内容是完整可用的备份**）建议整体移进 `E:\AI-CLI-Backup\`，移完就是一份规范备份、下次备份会全跳过；`dist\_20260903-125458.zip`（75.1 MB，内容是 E 盘根目录的杂物）直接删。
+3. **重跑一次盘根备份**验证修复：目标填 `E:\`，应看到自动改成 `E:\AI-CLI-Backup\`、干跑清单写明落盘位置、job 收在 `done` 而不是 `error`，勾了打包则 zip 落在 `E:\AI-CLI-Backup_<时间戳>.zip`。
+4. **迁移弹窗手感实测**（双击 13:53 的新 exe）：跨 CLI 的目录选择/范围切换与结果区两条命令，备份的体积懒加载、干跑表格、进度条与取消，还原的 manifest 摘要与映射表。
+5. 上面几步通过后：`git push` 到 `Forunzu/AI-Session-to-MD` 并发 Release v1.1.0（附件用 ASCII 名 `ChatToMD.exe`）。**当前本地已积 3 个未推送提交**（`59c31c0` v4 + `46abec7` context + `20c15d3` v4.1），刻意压在真机确认之后。
+6. 收集使用/社区反馈（GitHub Issues + 本机试用），继续调界面 / 导出格式 / 分组排序。
+7. （可选）若需彻底零 WebView2 依赖，再打包固定版运行时。
 
 ---
 
@@ -216,5 +216,5 @@ build_exe.bat     PyInstaller 单文件打包脚本
 
 ### 2026-09-03 13:40
 **本次做了什么：** v4.1——修用户真机实测暴露的两个缺陷。① 续聊命令：查 `codex resume --help` 与 `claude --help` 确认参数形态，把 `migrator.py` 两个 writer 返回的 `resume` 改成 id 形态并各加一条 `resume_alt`，前端 `MIG_NOTES` 与结果区、README 同步改。② 盘根备份：`vault.py` 加 `is_drive_root` / `normalize_dest` / `DEFAULT_SUBDIR`，`plan_backup` 与 `start_backup` 入口先规整目标并把结果回传前端写回输入框；`_make_zip` 改为「只收 manifest + 清单条目、放备份目录同级」并用独立 try 隔离失败；`_is_subpath` 换 `realpath`；新增 `resolve_backup_dir` 让还原能从上一层自动下钻。③ 清点用户那次失败留下的残留并逐个查明来历，未擅自删改。
-**关键结论 / 产出：** 两个缺陷的根因都不在「复制/写文件」本身，而在**边界处理**：一个是给用户的命令没经过实跑（照抄了印象里的路径形态），一个是 `"E:\\".rstrip("\\/")` 变成盘符相对路径 + `os.walk` 扫整个盘。用户那次备份其实**已经全部成功**（12724 文件 / 402.1 MB 完整落在 `E:\claude\`），只是被打包一步的 `Permission denied` 判成了 error——所以把「打包失败」与「备份失败」拆开记是这次最要紧的一处改动。验证：`node --check web/app.js` 通过；`is_drive_root`/`normalize_dest` 真值表（含 UNC 共享根）逐条对；E2E① zip 落在备份目录同级、内容恰好是 `manifest.json + tinycli/root/...`、排除无关文件与自身；E2E② 备份→从上一层还原→重映射到新 HOME（`done 4 文件 · 跳过 0`），长名与 8.3 短名两种「目标在源目录内」都被拦住。
-**遗留问题：** ① 真机 `codex resume <id>` 载入确认——`codex exec resume` 被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），只做了静态核对（文件名 UUID == `payload.session_id`）；② exe 未重打包，用户手上那份仍是 11:34 的旧版；③ 残留文件等用户拍板（`E:\manifest.json` + `E:\claude\` 建议移进 `E:\AI-CLI-Backup\`，`dist\_20260903-125458.zip` 建议删）；④ 3 个提交仍未推送。
+**关键结论 / 产出：** 两个缺陷的根因都不在「复制/写文件」本身，而在**边界处理**：一个是给用户的命令没经过实跑（照抄了印象里的路径形态），一个是 `"E:\\".rstrip("\\/")` 变成盘符相对路径 + `os.walk` 扫整个盘。用户那次备份其实**已经全部成功**（12724 文件 / 402.1 MB 完整落在 `E:\claude\`），只是被打包一步的 `Permission denied` 判成了 error——所以把「打包失败」与「备份失败」拆开记是这次最要紧的一处改动。验证：`node --check web/app.js` 通过、5 个后端文件 `py_compile` 通过；`is_drive_root`/`normalize_dest` 真值表（含 UNC 共享根）逐条对；E2E① zip 落在备份目录同级、内容恰好是 `manifest.json + tinycli/root/...`、排除无关文件与自身；E2E② 备份→从上一层还原→重映射到新 HOME（`done 4 文件 · 跳过 0`），长名与 8.3 短名两种「目标在源目录内」都被拦住；Flask 路由实跑一次 `dest=E:\` 的干跑，返回 `dest=E:\AI-CLI-Backup` + 提示语。代码提交 `20c15d3`，随后重打包 exe（20.6MB / 13:53）并冒烟「全部通过」——包内 `/app.js` 三处新字符串都在、包内 vault 对 `E:\` 也返回 `E:\AI-CLI-Backup`，即两处修复确实进了用户会拿到的那个 exe（列表已扫到 118 个会话）。
+**遗留问题：** ① 真机 `codex resume <id>` 载入确认——`codex exec resume` 被本机权限分类器连挡 3 次（`claude-opus-5-thinking … timed out`），只做了静态核对（rollout 文件名 UUID == `payload.session_id`）；② 残留文件等用户拍板（`E:\manifest.json` + `E:\claude\` 建议移进 `E:\AI-CLI-Backup\`，`dist\_20260903-125458.zip` 建议删）；③ 3 个提交仍未推送、Release v1.1.0 未发。顺带推翻了上一版的「`os.replace` 能改名就说明 exe 没被占用」——本次 2 个实例在跑、改名成功但 PyInstaller 的 `os.remove` 照样 WinError 5，已改成用 `os.remove` 判定并先 `taskkill`。
