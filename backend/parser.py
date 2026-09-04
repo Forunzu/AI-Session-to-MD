@@ -12,17 +12,34 @@
 import json
 import re
 
-# 用户消息里常见的“包裹上下文/系统噪音”，正常模式整段跳过
+# 用户消息里常见的“包裹上下文/系统噪音”，正常模式整段跳过。
+# 这些都是 CLI / 桌面端自己写进会话的记录，不是用户敲的字，逐条在真实会话里对过。
+# 判据是「首行前缀」，所以新增时要选足够长、不会撞上真实指令的写法：
+# 例如 `[Image: ` 必须带冒号——用户贴图后接着说话时首行是 `[Image #6] 导入时会…`，那是真话。
 _NOISE_PREFIXES = (
+    # 注入的上下文块
     "<environment_context",
     "<permissions instructions",
-    "# AGENTS.md instructions",
-    "<turn_aborted",
-    "# Files mentioned by the user",
     "<system-reminder",
+    "<app-context",
+    "<skills_instructions",
+    "<multi_agent_mode",
+    "<image_resize_notice",
+    "<task-notification",
+    "<model_switch",
+    "<collaboration_mode",
+    "# AGENTS.md instructions",
+    "# Files mentioned by the user",
     "--- CONTEXT ENTRY BEGIN ---",
+    # 本地命令回显
     "<command-name>",
     "<local-command",
+    # 中断 / 附件 / 工具回显（CLI 生成的旁白）
+    "<turn_aborted",
+    "[Request interrupted by user",
+    "[Your previous response had no visible output",
+    "[Image: ",
+    "[Tool]\n",
 )
 
 # CLI 自己生成的“助手消息”：登录失败提示、`No response requested.` 之类。实测这类记录
@@ -165,7 +182,8 @@ def parse_codex(path, max_lines=None):
     """Codex 在 resume/压缩时会重放历史，用户消息被反复注入。
     策略：用户回合只取 event_msg.user_message（已去掉上下文包裹），role=user 的
     response_item 一律丢弃；再对“中间没有助手/工具回合的相邻重复用户消息”折叠，
-    去掉重放，同时保留真正被隔开的重复输入（如多次“继续”）。"""
+    去掉重放，同时保留真正被隔开的重复输入（如多次“继续”）。
+    注入块（`<app-context>`、`[Image: …]` 等）打 noise 标记交上层决定露不露。"""
     events = []
     last_user = None          # 最近一次已输出的用户消息文本
     turn_progressed = True     # 自上次用户消息后，是否出现过助手/工具回合
@@ -177,13 +195,16 @@ def parse_codex(path, max_lines=None):
         if pt == "user_message":
             raw = p.get("message")
             txt = clean_user_text(raw if isinstance(raw, str) else _extract_codex_text(raw))
-            if not txt or is_noise(txt):
+            if not txt:
                 continue
-            if txt == last_user and not turn_progressed:
-                continue  # 相邻重放，折叠
-            events.append({"kind": "user", "text": txt})
-            last_user = txt
-            turn_progressed = False
+            # 噪音打标记而不是丢掉，跟 Claude 侧同一个承诺：正常模式藏、“完整原始”折叠露出。
+            # 打了标记的记录不参与折叠判定，否则注入块夹在两条相同指令中间会把重放拆散。
+            junk = is_noise(txt)
+            if not junk:
+                if txt == last_user and not turn_progressed:
+                    continue  # 相邻重放，折叠
+                last_user, turn_progressed = txt, False
+            events.append({"kind": "user", "text": txt, "noise": junk})
         elif pt == "message":
             role = p.get("role")
             txt = _extract_codex_text(p.get("content")).strip()

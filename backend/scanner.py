@@ -58,7 +58,9 @@ def _peek(path, source):
         events = (parser.parse_codex(path, max_lines=HEAD_LINES) if source == "codex"
                   else parser.parse_claude(path, max_lines=HEAD_LINES))
         for e in events:
-            if e.get("kind") == "user" and e.get("text"):
+            # 跳过 CLI 自己写进会话的记录（parser 已打 noise 标记）：拿它们当标题会让列表
+            # 出现 `<app-context>` / `<local-command-caveat>` 这类条目，还会带进 ANSI 控制符。
+            if e.get("kind") == "user" and e.get("text") and not e.get("noise"):
                 title = " ".join(e["text"].split())[:80]
                 break
         if not title:
