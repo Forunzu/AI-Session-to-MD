@@ -173,7 +173,7 @@
             备份前请先关掉对应 CLI，运行中的 <code>*.sqlite-wal</code> 会复制到不一致快照。</p>
           <div id="bkDry"></div>
           <div class="acts">
-            <button class="btn" onclick="bkPlan()">预览（干跑）</button>
+            <button class="btn" onclick="bkPreview(this)">预览（干跑）</button>
             <button class="btn primary" id="bkGo" onclick="bkStart()">开始备份</button>
           </div>
           <div class="progress" id="bkProg"></div>
@@ -185,7 +185,7 @@
             <div class="fval">
               <input id="rsSrc" placeholder="备份目录，或 .zip 包">
               <button class="btn" onclick="pickRsSrc()">选择…</button>
-              <button class="btn" onclick="rsPlan()">读取并预览</button>
+              <button class="btn" onclick="rsPreview(this)">读取并预览</button>
             </div>
           </div>
           <p class="hint" style="margin-left:108px">选 <code>manifest.json</code> 所在的那一层最稳；
@@ -213,7 +213,7 @@
               <label class="chk"><input type="checkbox" id="rsRw" onchange="syncRw()">
                 启用（改旧机项目路径）</label>
               <button class="btn ghost" id="rsRwAdd" onclick="addMapRow('','')" disabled>＋ 一条映射</button>
-              <button class="btn ghost" id="rsRwPlan" onclick="rwPlan()" disabled>预览命中</button>
+              <button class="btn ghost" id="rsRwPlan" onclick="rwPreview(this)" disabled>预览命中</button>
             </div>
           </div>
           <div class="map-list" id="rsMap"></div>

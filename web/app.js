@@ -472,17 +472,37 @@ async function copyTxt(t) {
   toast("已复制到剪贴板");
 }
 
-function arm(btn, label) {
+// 「点两次才真跑」的待确认窗口。原来是 20 秒，但备份/还原的干跑清单有几十行要核对，
+// 13 万文件的备份干跑本身就要算 40 秒以上，20 秒根本读不完。
+const ARM_MS = 60000;
+
+function arm(btn, label, ms) {
   // 大动作不弹原生 confirm（pywebview 里不一定可靠），改成同一个按钮点两次
   if (btn._armed) {
-    clearTimeout(btn._t); btn._armed = false; btn.textContent = btn._orig;
+    disarm(btn);
     return true;
   }
   btn._orig = btn._orig || btn.textContent;
   btn._armed = true;
   btn.textContent = label;
-  btn._t = setTimeout(() => { btn._armed = false; btn.textContent = btn._orig; }, 20000);
+  btn._t = setTimeout(() => disarm(btn), ms || ARM_MS);
   return false;
+}
+
+function disarm(btn) {
+  clearTimeout(btn._t);
+  btn._armed = false;
+  if (btn._orig) btn.textContent = btn._orig;
+}
+
+async function busy(btn, fn, label) {
+  // 干跑期间把按钮禁掉：不禁的话点第二下会再起一次干跑，把待确认状态和清单一起冲掉
+  btn._orig = btn._orig || btn.textContent;   // 先记原文，免得 arm() 之后把「统计中…」当原文
+  const dis = btn.disabled;
+  btn.disabled = true;
+  if (label) btn.textContent = label;
+  try { return await fn(); }
+  finally { btn.disabled = dis; btn.textContent = btn._orig; }
 }
 // ---------- 跨 CLI 续聊 ----------
 const MIG_NOTE_TAIL = "工具活动折叠成 <code>〔工具 …〕</code> 文本，不生成真实调用块（缺配对的结果块会让目标 CLI 下一轮直接报错）。只新建文件，不改动任何已有会话。";
@@ -713,18 +733,25 @@ async function bkPlan(quiet) {
   const dest = $("bkDest").value.trim();
   if (!entries.length) { toast("请先勾选要备份的目录"); return null; }
   if (!dest) { toast("请先选择备份到哪个目录"); return null; }
+  disarm($("bkGo"));            // 重新统计 = 刚才那份待确认作废
   $("bkDry").innerHTML = '<p class="dry-sum">正在统计…</p>';
   try {
     const p = await post("/api/vault/plan", { action: "backup", dest: dest, entries: entries });
     if (p.dest && p.dest !== dest) $("bkDest").value = p.dest;   // 后端把盘根规整成子目录了
     renderBkDry(p);
+    // 缓存给「开始备份」用：13 万文件要算 40 秒以上，先预览再开始不该再等一遍
+    $("bkGo")._plan = p;
+    $("bkGo")._sig = bkSig();
     if (!quiet) toast(`干跑完成：${p.files} 个文件 / ${p.size}`);
     return p;
   } catch (e) {
+    $("bkGo")._plan = null;
     $("bkDry").innerHTML = `<p class="dry-sum warn hint" style="margin-left:0">${esc(e.message)}</p>`;
     return null;
   }
 }
+
+async function bkPreview(btn) { await busy(btn, () => bkPlan(false), "统计中…"); }
 
 function renderBkDry(p) {
   let h = `<p class="dry-sum">备份到 <b>${esc(p.dest || "")}</b>；合计 <b>${p.files}</b> 个文件 / <b>${p.size}</b>；
@@ -751,25 +778,45 @@ function renderBkDry(p) {
   $("bkDry").innerHTML = h;
 }
 
+function bkSig() {
+  // 待确认期间用户可能改了勾选或目标目录。签名对不上就不许拿旧清单开跑——
+  // 「点两次」的意义是「你确认的就是你看到的那份」，签名是这句话唯一的保障。
+  return JSON.stringify(bkEntries()) + "|" + $("bkDest").value.trim();
+}
+
 async function bkStart() {
   const btn = $("bkGo");
-  const p = await bkPlan(true);
-  if (!p) { btn._armed = false; btn.textContent = btn._orig || "开始备份"; return; }
-  if (!arm(btn, `确认备份 ${p.files} 个文件 / ${p.size}（再点一次）`)) {
-    toast("已生成干跑清单，请核对后再点一次开始；备份前请先关掉对应 CLI");
+  if (btn._armed) {
+    // 第二下 = 确认，直接用刚才那份干跑结果，**不再重算**。
+    // 早期版本在这里又跑了一遍干跑：8.9 GB / 13 万文件要算 40 秒以上，待确认窗口先到期，
+    // 于是 arm() 把这一下当成「第一次点」又进了待确认态，确认永远落不了地，大备份点不动。
+    disarm(btn);
+    const p = btn._plan;
+    if (!p) { toast("干跑清单丢了，请再点一次「开始备份」重新核对"); return; }
+    if (bkSig() !== btn._sig) {
+      btn._plan = null;
+      toast("勾选或备份目录变了，已作废刚才那份清单，请再点一次「开始备份」重新核对");
+      return;
+    }
+    try {
+      const r = await busy(btn, () => post("/api/vault/backup",
+        { dest: p.dest, entries: bkEntries(), zip: $("bkZip").checked }));
+      await post("/api/config", { backup_dir: p.dest });
+      STATE.backup_dir = p.dest;
+      pollJob(r.job_id, "bkProg", j => {
+        const z = j.result && j.result.zip;
+        toast(`备份${j.state === "done" ? "完成" : j.state === "canceled" ? "已取消" : "出错"}：` +
+          `${j.done_files} 个文件 / ${j.done_size}，跳过 ${j.skipped}${z ? "，已打包 zip" : ""}`);
+      });
+    } catch (e) { toast("备份启动失败：" + e.message); }
     return;
   }
-  try {
-    const r = await post("/api/vault/backup", { dest: p.dest, entries: bkEntries(),
-      zip: $("bkZip").checked });
-    await post("/api/config", { backup_dir: p.dest });
-    STATE.backup_dir = p.dest;
-    pollJob(r.job_id, "bkProg", j => {
-      const z = j.result && j.result.zip;
-      toast(`备份${j.state === "done" ? "完成" : j.state === "canceled" ? "已取消" : "出错"}：` +
-        `${j.done_files} 个文件 / ${j.done_size}，跳过 ${j.skipped}${z ? "，已打包 zip" : ""}`);
-    });
-  } catch (e) { toast("备份启动失败：" + e.message); }
+  const p = (btn._plan && bkSig() === btn._sig)
+    ? btn._plan                                   // 刚预览过、条件没变，直接进待确认
+    : await busy(btn, () => bkPlan(true), "统计中…（大目录要几十秒）");
+  if (!p) { btn._plan = null; return; }
+  arm(btn, `确认备份 ${p.files} 个文件 / ${p.size}（再点一次）`);
+  toast("已生成干跑清单，请核对后再点一次开始；备份前请先关掉对应 CLI");
 }
 
 // ---------- 进度轮询 ----------
@@ -829,6 +876,7 @@ function rsOverrides() {
 async function rsPlan(quiet) {
   const src = $("rsSrc").value.trim();
   if (!src) { toast("请先选择备份目录或 zip 包"); return null; }
+  disarm($("rsGo"));            // 重新读取 = 刚才那份待确认作废
   if (/\.zip$/i.test(src)) {
     RS_PLAN = null;
     $("rsDry").innerHTML = `<p class="hint" style="margin-left:0">选的是 zip 包，没法先干跑清点。
@@ -844,14 +892,18 @@ async function rsPlan(quiet) {
     RS_PLAN = p;
     renderRsDry(p);
     if (p.backup_dir && p.backup_dir !== src) $("rsSrc").value = p.backup_dir;
+    $("rsGo")._sig = rsSig();   // 缓存给「开始还原」用，先预览再开始不该再等一遍
     if (!quiet) toast(p.files ? `可还原 ${p.files} 个文件 / ${p.size}` : "没找到可还原的文件，看清单里的提示");
     return p;
   } catch (e) {
     RS_PLAN = null;
+    $("rsGo")._sig = "";
     $("rsDry").innerHTML = `<p class="dry-sum warn hint" style="margin-left:0">${esc(e.message)}</p>`;
     return null;
   }
 }
+
+async function rsPreview(btn) { await busy(btn, () => rsPlan(false), "读取中…"); }
 
 function renderRsDry(p) {
   const m = p.manifest || {};
@@ -917,37 +969,58 @@ async function rwPlan() {
   } catch (e) { toast("改写预览失败：" + e.message); return null; }
 }
 
+async function rwPreview(btn) { await busy(btn, () => rwPlan(), "统计中…"); }
+
+function rsSig() {
+  return [$("rsSrc").value.trim(), $("rsHome").value.trim(), segVal("rsConflict"),
+    JSON.stringify(rsOverrides()),
+    $("rsRw").checked ? JSON.stringify(rwMapping()) : ""].join("|");
+}
+
 async function rsStart() {
   const btn = $("rsGo");
   const src = $("rsSrc").value.trim();
   if (!src) { toast("请先选择备份目录或 zip 包"); return; }
   const isZip = /\.zip$/i.test(src);
-  const p = isZip ? null : await rsPlan(true);
-  if (!isZip && !p) { btn._armed = false; btn.textContent = btn._orig || "开始还原"; return; }
-  if (p && !p.files) {
-    btn._armed = false; btn.textContent = btn._orig || "开始还原";
-    toast("这个目录里没找到可还原的文件，按上面清单里的提示换个目录再试");
+  if (btn._armed) {
+    // 第二下 = 确认。和备份侧同一个道理：这里绝不能再跑一次干跑，
+    // 否则大目录算得比待确认窗口还久，确认就永远落不了地。
+    disarm(btn);
+    if (rsSig() !== btn._sig) {
+      btn._plan = null;
+      toast("备份目录/还原到/策略/映射变了，已作废刚才那份清单，请再点一次「开始还原」重新核对");
+      return;
+    }
+    const rw = $("rsRw").checked ? { enabled: true, mapping: rwMapping() } : null;
+    try {
+      const r = await busy(btn, () => post("/api/vault/restore", { backup_dir: src,
+        home: $("rsHome").value.trim(), overrides: rsOverrides(),
+        conflict: segVal("rsConflict"), rewrite: rw }));
+      if (r.backup_dir && r.backup_dir !== src) $("rsSrc").value = r.backup_dir;
+      pollJob(r.job_id, "rsProg", j => {
+        toast(`还原${j.state === "done" ? "完成" : j.state === "canceled" ? "已取消" : "出错"}：` +
+          `${j.done_files} 个文件 / ${j.done_size}，跳过 ${j.skipped}`);
+      });
+    } catch (e) { toast("还原启动失败：" + e.message); }
     return;
+  }
+  let p = null;
+  if (!isZip) {
+    p = (RS_PLAN && rsSig() === btn._sig) ? RS_PLAN
+      : await busy(btn, () => rsPlan(true), "读取中…（大目录要几十秒）");
+    if (!p) return;
+    if (!p.files) {
+      toast("这个目录里没找到可还原的文件，按上面清单里的提示换个目录再试");
+      return;
+    }
   }
   const rw = $("rsRw").checked ? { enabled: true, mapping: rwMapping() } : null;
   if (rw && !Object.keys(rw.mapping).length) { toast("勾了路径改写但没填映射，请填一条或取消勾选"); return; }
-  const label = isZip ? "确认解包并还原（再点一次）"
-    : `确认还原 ${p.files} 个文件 / ${p.size}${rw ? " + 路径改写" : ""}（再点一次）`;
-  if (!arm(btn, label)) {
-    toast(isZip ? "zip 会先解到临时目录，确认请再点一次；还原前请先关掉对应 CLI"
-      : "已生成还原清单，请核对「还原到」再点一次；还原前请先关掉对应 CLI");
-    return;
-  }
-  try {
-    const r = await post("/api/vault/restore", { backup_dir: src,
-      home: $("rsHome").value.trim(), overrides: rsOverrides(),
-      conflict: segVal("rsConflict"), rewrite: rw });
-    if (r.backup_dir && r.backup_dir !== src) $("rsSrc").value = r.backup_dir;
-    pollJob(r.job_id, "rsProg", j => {
-      toast(`还原${j.state === "done" ? "完成" : j.state === "canceled" ? "已取消" : "出错"}：` +
-        `${j.done_files} 个文件 / ${j.done_size}，跳过 ${j.skipped}`);
-    });
-  } catch (e) { toast("还原启动失败：" + e.message); }
+  btn._sig = rsSig();      // rsPlan 可能把 zip/上层目录规整成真正的备份目录，签名要在它之后算
+  arm(btn, isZip ? "确认解包并还原（再点一次）"
+    : `确认还原 ${p.files} 个文件 / ${p.size}${rw ? " + 路径改写" : ""}（再点一次）`);
+  toast(isZip ? "zip 会先解到临时目录，确认请再点一次；还原前请先关掉对应 CLI"
+    : "已生成还原清单，请核对「还原到」再点一次；还原前请先关掉对应 CLI");
 }
 
 // ---------- 迁移弹窗事件绑定 ----------
