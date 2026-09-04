@@ -167,7 +167,7 @@ build_exe.bat     PyInstaller 单文件打包脚本
 | 内容 | 位置 | 说明 |
 |---|---|---|
 | **整个项目文件夹** | `E:\在办项目\AI会话转MD\` | **一定要连隐藏的 `.git` 一起拷**，未推送的提交全在里面。整夹约 53 MB（含 `dist\`、`build\`）。有些拷贝工具默认跳过隐藏目录，拷完到新机先 `git log --oneline -3` 核一眼。 |
-| **仓库 bundle（双保险）** | `E:\AI工作交付物\AI会话转MD换机\AI会话转MD_全量仓库_20260904.bundle` | 131 KB，`git bundle --all` 打的完整历史（`main` = `07379ee`，含 `origin/main` 指针），已 `git bundle verify` 通过。万一 `.git` 没拷全，新机 `git clone <bundle> AI会话转MD` 就能完整复原。同目录还有一份 `_20260903.bundle`（只到 `c86b41e`，不含 v4.4），**带走日期新的那份**。往后再改代码就得重打一份，或者直接 `git push` 省掉这层。 |
+| **仓库 bundle（双保险）** | `E:\AI工作交付物\AI会话转MD换机\AI会话转MD_全量仓库_20260904.bundle` | `git bundle --all` 打的完整历史（含 `origin/main` 指针），已 `git bundle verify` 通过、报「complete history」。万一 `.git` 没拷全，新机 `git clone <bundle> AI会话转MD` 就能完整复原。同目录还有一份 `_20260903.bundle`（旧、不含 v4.4），**带走日期新的那份**。**bundle 是一次快照，之后每提交一次它就落后一次**——出发前对一眼：`git bundle verify <bundle>` 里的 `refs/heads/main` 要等于 `git rev-parse HEAD`，不等就重打一份（或者直接 `git push`，省掉这层）。 |
 | **三个自检探针** | 同上目录 `probe_outline.py` / `probe_roundtrip.py` / `probe_exe.py` | 换机后先跑这三个，能一次验完解析去噪、目录复算、导出标题、双向往返、7 条路由，以及**打包后的 exe** 是否正常（`probe_exe.py` 会自己起 exe、找端口、打 6 条 HTTP、跑完 `taskkill` 清进程）。 |
 | **各 CLI 的会话与配置** | `~\.claude`、`~\.codex`、其余 `~\.<cli>` | **用本工具自己的「🔀 迁移 → 备份/还原」搬**（这功能就是为这件事做的），别手拷。 |
 
@@ -296,8 +296,9 @@ build_exe.bat     PyInstaller 单文件打包脚本
    + 本条 context；准确条数用 `git log --oneline origin/main..HEAD | wc -l` 现数，别信这里的数字）。
    这是整个项目里**唯一不可再生**的东西——exe 能重打、探针能重写、备份能重做，提交历史丢了就没了。
    **`git push` ≠ 发 Release**，推上去不会破坏「Release 压在真机确认之后」这个约定。
-   兜底已就位：`E:\AI工作交付物\AI会话转MD换机\AI会话转MD_全量仓库_20260904.bundle`（131 KB，`main` = `07379ee`，
-   `git bundle verify` 通过、报「complete history」）。往后再动代码，要么 push、要么重打一份新 bundle。
+   兜底已就位：`E:\AI工作交付物\AI会话转MD换机\AI会话转MD_全量仓库_20260904.bundle`（`git bundle verify` 通过、
+   报「complete history」）。**它是快照，每提交一次就落后一次**——出发前对一眼 `git bundle verify` 里的 `main`
+   是否等于 `git rev-parse HEAD`，不等就重打，或者直接 `git push` 省掉这层。
 2. **真机续聊确认**（需用户在场，这是唯一还没在真 CLI 里验过的一环；**换机前做完最省事**，
    否则要等 CLI 数据还原到新机才能验，而那时又多了一层「路径改写对不对」的变量）：
    `codex -C "E:\在办项目\脚本管理软件开发" resume 01a0661c-de9e-7006-b62c-fd43a71f85fe`（一行，`-C` 在 `resume` 前面）；
